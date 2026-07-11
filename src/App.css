@@ -641,3 +641,7 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.add-template-exercise-card {
+  margin-top: 16px;
+}

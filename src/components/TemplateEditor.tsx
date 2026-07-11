@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ExerciseAutocomplete } from "./ExerciseAutocomplete";
+import { ExerciseDetailsPanel } from "./ExerciseDetailsPanel";
 import { getOrCreateExercise } from "../data/exerciseRepository";
 import {
   addExerciseToTemplate,
@@ -39,7 +40,9 @@ function optionalNumber(value: string) {
   const parsed = Number(value);
 
   if (Number.isNaN(parsed)) {
-    throw new Error("Numeric fields must contain valid numbers.");
+    throw new Error(
+      "Numeric fields must contain valid numbers."
+    );
   }
 
   return parsed;
@@ -47,40 +50,49 @@ function optionalNumber(value: string) {
 
 function TemplateExerciseEditor({
   templateExercise,
+  exerciseId,
   exerciseName,
   isFirst,
   isLast
 }: {
   templateExercise: WorkoutTemplateExercise;
+  exerciseId: number;
   exerciseName: string;
   isFirst: boolean;
   isLast: boolean;
 }) {
-  const [fields, setFields] = useState<TemplateExerciseFields>({
-    plannedSetCount: "",
-    targetMinReps: "",
-    targetMaxReps: "",
-    targetRpeMin: "",
-    targetRpeMax: "",
-    targetRestSeconds: "",
-    warmupInstructions: "",
-    prescriptionNotes: ""
-  });
+  const [fields, setFields] =
+    useState<TemplateExerciseFields>({
+      plannedSetCount: "",
+      targetMinReps: "",
+      targetMaxReps: "",
+      targetRpeMin: "",
+      targetRpeMax: "",
+      targetRestSeconds: "",
+      warmupInstructions: "",
+      prescriptionNotes: ""
+    });
 
   useEffect(() => {
     setFields({
       plannedSetCount:
-        templateExercise.plannedSetCount?.toString() ?? "",
+        templateExercise.plannedSetCount?.toString() ??
+        "",
       targetMinReps:
-        templateExercise.targetMinReps?.toString() ?? "",
+        templateExercise.targetMinReps?.toString() ??
+        "",
       targetMaxReps:
-        templateExercise.targetMaxReps?.toString() ?? "",
+        templateExercise.targetMaxReps?.toString() ??
+        "",
       targetRpeMin:
-        templateExercise.targetRpeMin?.toString() ?? "",
+        templateExercise.targetRpeMin?.toString() ??
+        "",
       targetRpeMax:
-        templateExercise.targetRpeMax?.toString() ?? "",
+        templateExercise.targetRpeMax?.toString() ??
+        "",
       targetRestSeconds:
-        templateExercise.targetRestSeconds?.toString() ?? "",
+        templateExercise.targetRestSeconds?.toString() ??
+        "",
       warmupInstructions:
         templateExercise.warmupInstructions ?? "",
       prescriptionNotes:
@@ -208,9 +220,11 @@ function TemplateExerciseEditor({
           targetRpeMax,
           targetRestSeconds,
           warmupInstructions:
-            fields.warmupInstructions.trim() || undefined,
+            fields.warmupInstructions.trim() ||
+            undefined,
           prescriptionNotes:
-            fields.prescriptionNotes.trim() || undefined
+            fields.prescriptionNotes.trim() ||
+            undefined
         }
       );
     } catch (error) {
@@ -287,6 +301,10 @@ function TemplateExerciseEditor({
           </button>
         </div>
       </div>
+
+      <ExerciseDetailsPanel
+        exerciseId={exerciseId}
+      />
 
       <div className="template-target-grid">
         <label className="field-label">
@@ -521,7 +539,10 @@ export function TemplateEditor({
     if (!selectedTemplateId) return;
 
     const confirmed = confirm(
-      `Delete template "${selectedTemplate?.template.name ?? "Untitled"}"?`
+      `Delete template "${
+        selectedTemplate?.template.name ??
+        "Untitled"
+      }"?`
     );
 
     if (!confirmed) return;
@@ -678,25 +699,6 @@ export function TemplateEditor({
                   </button>
                 </div>
 
-                <div className="card">
-                  <h3>Add Exercise</h3>
-
-                  <form
-                    className="inline-form exercise-add-form"
-                    onSubmit={addExercise}
-                  >
-                    <ExerciseAutocomplete
-                      exercises={exercises}
-                      value={exerciseName}
-                      onChange={setExerciseName}
-                    />
-
-                    <button type="submit">
-                      Add Exercise
-                    </button>
-                  </form>
-                </div>
-
                 <div className="template-exercise-list">
                   {selectedTemplate.exercises
                     .length ? (
@@ -711,6 +713,9 @@ export function TemplateEditor({
                           }
                           templateExercise={
                             templateExercise
+                          }
+                          exerciseId={
+                            templateExercise.exerciseId
                           }
                           exerciseName={getExerciseName(
                             templateExercise.exerciseId
@@ -733,6 +738,25 @@ export function TemplateEditor({
                       </p>
                     </div>
                   )}
+                </div>
+
+                <div className="card add-template-exercise-card">
+                  <h3>Add Exercise</h3>
+
+                  <form
+                    className="inline-form exercise-add-form"
+                    onSubmit={addExercise}
+                  >
+                    <ExerciseAutocomplete
+                      exercises={exercises}
+                      value={exerciseName}
+                      onChange={setExerciseName}
+                    />
+
+                    <button type="submit">
+                      Add Exercise
+                    </button>
+                  </form>
                 </div>
               </>
             ) : (
