@@ -125,6 +125,10 @@ textarea { min-height: 58px; resize: vertical; }
 .note-block { padding: 8px; border-radius: 7px; color: var(--text); background-color: var(--surface-muted); white-space: pre-wrap; }
 
 .inline-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 8px; align-items: start; }
+.compact-gym-field { max-width: 260px; }
+.gym-list { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; }
+.gym-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.gym-row > span { min-width: 0; font-weight: 650; }
 .button-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .exercise-header, .history-detail-header, .template-editor-heading, .template-exercise-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .exercise-header h3, .history-detail-header h3, .template-editor-heading h3 { margin: 0; }

@@ -80,7 +80,7 @@ export async function importJsonBackup(file: File) {
       await db.exercises.clear();
       await db.gyms.clear();
 
-      await db.gyms.bulkAdd(parsed.data.gyms as never[]);
+      await db.gyms.bulkAdd((parsed.data.gyms ?? []) as never[]);
       await db.exercises.bulkAdd(parsed.data.exercises as never[]);
 
       await db.workoutTemplates.bulkAdd(
@@ -133,6 +133,7 @@ function downloadCsv(filename: string, rows: unknown[][]) {
 }
 
 export async function downloadSetsCsv() {
+  const gyms = await db.gyms.toArray();
   const workouts = await db.workouts.toArray();
   const workoutExercises = await db.workoutExercises.toArray();
   const workoutSets = await db.workoutSets.toArray();
@@ -141,11 +142,13 @@ export async function downloadSetsCsv() {
   const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
   const workoutExerciseById = new Map(workoutExercises.map((workoutExercise) => [workoutExercise.id, workoutExercise]));
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
+  const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
 
   const rows: unknown[][] = [
     [
       "workoutDate",
       "workoutTitle",
+      "gymName",
       "workoutNotes",
       "workoutStartTime",
       "workoutLastSetAt",
@@ -193,6 +196,7 @@ export async function downloadSetsCsv() {
     rows.push([
       workout?.date,
       workout?.title,
+      workout?.gymId === undefined ? "" : (gymById.get(workout.gymId)?.name ?? "Unknown gym"),
       workout?.notes,
       workout?.startTime,
       workout?.lastSetAt,

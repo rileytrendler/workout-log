@@ -80,7 +80,8 @@ function snapshotTemplateExercise(
 
 export async function applyWorkoutTemplateToDate(
   date: string,
-  templateId: number
+  templateId: number,
+  defaultGymId?: number
 ): Promise<ApplyWorkoutTemplateResult> {
   return await db.transaction(
     "rw",
@@ -114,6 +115,7 @@ export async function applyWorkoutTemplateToDate(
       if (!workout) {
         const workoutId = await db.workouts.add({
           date,
+          gymId: defaultGymId,
           title: template.name,
           notes: template.notes?.trim() || undefined,
           startTime: now,
@@ -429,7 +431,8 @@ export async function recalculateWorkoutLastSetAt(
 
 export async function getOrCreateWorkoutForDate(
   date: string,
-  defaultTitle = "Today's Workout"
+  defaultTitle = "Today's Workout",
+  defaultGymId?: number
 ): Promise<Workout> {
   const existingWorkout = await db.workouts
     .where("date")
@@ -444,6 +447,7 @@ export async function getOrCreateWorkoutForDate(
 
   const workoutId = await db.workouts.add({
     date,
+    gymId: defaultGymId,
     title: defaultTitle,
     startTime: now,
     createdAt: now,
@@ -457,6 +461,10 @@ export async function getOrCreateWorkoutForDate(
   }
 
   return workout;
+}
+
+export async function updateWorkoutGym(workoutId: number, gymId?: number): Promise<void> {
+  await db.workouts.update(workoutId, { gymId, updatedAt: nowString() });
 }
 
 export async function addExerciseToWorkout(

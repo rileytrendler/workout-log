@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db/db";
-import type { Workout, WorkoutExercise, WorkoutSet } from "./db/types";
+import type { Gym, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
 import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
@@ -21,8 +21,10 @@ import {
   updateHistoricalSet,
   updateSetPerformedTime,
   updateWorkoutExerciseNotes,
+  updateWorkoutGym,
   updateWorkoutText
 } from "./data/workoutRepository";
+import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
@@ -91,6 +93,9 @@ function App() {
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
   const [exerciseName, setExerciseName] = useState("");
+  const [newGymName, setNewGymName] = useState("");
+
+  const gyms = useLiveQuery<Gym[]>(() => db.gyms.orderBy("name").toArray(), []);
 
   const workout = useLiveQuery(
     () => db.workouts.where("date").equals(today).first(),
@@ -253,7 +258,7 @@ function App() {
   }
 
   async function startTodayWorkout() {
-    await getOrCreateWorkoutForDate(today);
+    await getOrCreateWorkoutForDate(today, "Today's Workout", await getValidLastGymId());
   }
 
   async function startOrAddFromTemplate(templateId: number, templateName: string) {
@@ -266,7 +271,7 @@ function App() {
     }
 
     try {
-      const result = await applyWorkoutTemplateToDate(today, templateId);
+      const result = await applyWorkoutTemplateToDate(today, templateId, await getValidLastGymId());
 
       if (result.skippedExerciseNames.length) {
         alert(
@@ -360,7 +365,7 @@ function App() {
 
     try {
       const exerciseId = await getOrCreateExercise(trimmedName);
-      const currentWorkout = await getOrCreateWorkoutForDate(today);
+      const currentWorkout = await getOrCreateWorkoutForDate(today, "Today's Workout", await getValidLastGymId());
 
       if (!currentWorkout.id) {
         throw new Error("Workout ID is missing.");
@@ -500,6 +505,34 @@ function App() {
     return exercises?.find((exercise) => exercise.id === exerciseId)?.name ?? "Unknown Exercise";
   }
 
+  async function changeWorkoutGym(workoutId: number, value: string, remember: boolean) {
+    const gymId = value ? Number(value) : undefined;
+    await updateWorkoutGym(workoutId, gymId);
+    if (remember) rememberLastGym(gymId);
+  }
+
+  async function addGym(event: React.FormEvent) {
+    event.preventDefault();
+    try { await createGym(newGymName); setNewGymName(""); }
+    catch (error) { alert(error instanceof Error ? error.message : "Gym could not be created."); }
+  }
+
+  async function editGym(gym: Gym) {
+    if (!gym.id) return;
+    const name = prompt("Gym name:", gym.name);
+    if (name === null) return;
+    try { await renameGym(gym.id, name); }
+    catch (error) { alert(error instanceof Error ? error.message : "Gym could not be renamed."); }
+  }
+
+  async function removeGym(gym: Gym) {
+    if (!gym.id) return;
+    const count = await getGymWorkoutCount(gym.id);
+    if (count) { alert(`“${gym.name}” is used by ${count} workout${count === 1 ? "" : "s"} and cannot be deleted.`); return; }
+    if (!confirm(`Delete unused gym “${gym.name}”?`)) return;
+    await deleteGym(gym.id);
+  }
+
   function getSetsForWorkoutExercise(workoutExerciseId: number, sets = workoutSets) {
     return sets
       ?.filter((set) => set.workoutExerciseId === workoutExerciseId)
@@ -579,6 +612,14 @@ function App() {
                     onChange={(event) => updateWorkoutTitle(event.target.value)}
                     placeholder="Push, Pull, Legs, Upper, etc."
                   />
+                </label>
+
+                <label className="field-label compact-gym-field">
+                  Gym
+                  <select value={workout.gymId ?? ""} onChange={(event) => workout.id && changeWorkoutGym(workout.id, event.target.value, true)}>
+                    <option value="">No gym</option>
+                    {gyms?.map((gym) => <option key={gym.id} value={gym.id}>{gym.name}</option>)}
+                  </select>
                 </label>
 
                 <label className="field-label">
@@ -756,6 +797,7 @@ function App() {
                     >
                       <strong>{historyWorkout.title || "Untitled Workout"}</strong>
                       <span>{historyWorkout.date}</span>
+                      {historyWorkout.gymId !== undefined && <span>{gymName(gyms, historyWorkout.gymId)}</span>}
                       <span>{formatDuration(historyWorkout.startTime ?? historyWorkout.createdAt, effectiveEndTime)}</span>
                     </button>
                   );
@@ -783,6 +825,15 @@ function App() {
                     <p>Started: {formatDateTime(selectedWorkout.startTime ?? selectedWorkout.createdAt)}</p>
                     <p>Last set: {formatDateTime(getWorkoutEffectiveEndTime(selectedWorkout))}</p>
                     <p>Duration: {formatDuration(selectedWorkout.startTime ?? selectedWorkout.createdAt, getWorkoutEffectiveEndTime(selectedWorkout))}</p>
+                    {selectedWorkout.gymId !== undefined && <p>Gym: {gymName(gyms, selectedWorkout.gymId)}</p>}
+
+                    <label className="field-label compact-gym-field">
+                      Edit Gym
+                      <select value={selectedWorkout.gymId ?? ""} onChange={(event) => selectedWorkout.id && changeWorkoutGym(selectedWorkout.id, event.target.value, false)}>
+                        <option value="">No gym</option>
+                        {gyms?.map((gym) => <option key={gym.id} value={gym.id}>{gym.name}</option>)}
+                      </select>
+                    </label>
 
                     {fullWorkoutView && selectedWorkout.notes && (
                       <>
@@ -862,6 +913,27 @@ function App() {
           <h2>Settings / Backup</h2>
 
           <div className="card">
+            <h3>Gyms</h3>
+            <form className="inline-form" onSubmit={addGym}>
+              <input value={newGymName} onChange={(event) => setNewGymName(event.target.value)} placeholder="Add a gym" aria-label="New gym name" />
+              <button type="submit">Add</button>
+            </form>
+            {gyms?.length ? (
+              <div className="gym-list">
+                {gyms.map((gym) => (
+                  <div className="gym-row" key={gym.id}>
+                    <span>{gym.name}</span>
+                    <div className="button-row">
+                      <button type="button" className="secondary-button tiny-button" onClick={() => editGym(gym)}>Rename</button>
+                      <button type="button" className="secondary-button danger tiny-button" onClick={() => removeGym(gym)}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="muted">No gyms saved.</p>}
+          </div>
+
+          <div className="card">
             <h3>Backup</h3>
 
             <p>
@@ -892,6 +964,7 @@ function App() {
 
             <p>Workouts: {workouts?.length ?? 0}</p>
             <p>Exercises: {exercises?.length ?? 0}</p>
+            <p>Gyms: {gyms?.length ?? 0}</p>
 
             <button className="secondary-button danger" onClick={removeUnusedExercises}>Remove Unused Exercises</button>
 
