@@ -3,10 +3,14 @@ import { useLiveQuery } from "dexie-react-hooks";
 import {
   deleteWorkoutSet,
   getPreviousPerformance,
-  saveSetWeightAndReps,
+  getWorkoutExerciseContext,
+  saveSetPerformance,
   updateSetNote
 } from "../data/workoutRepository";
-import type { WorkoutSet } from "../db/types";
+import type {
+  ExerciseMeasurementType,
+  WorkoutSet
+} from "../db/types";
 
 type ExerciseSetRowsProps = {
   workoutExerciseId: number;
@@ -16,6 +20,7 @@ type ExerciseSetRowsProps = {
 type SetDraft = {
   weight: string;
   reps: string;
+  actualRpe: string;
 };
 
 function getSetPerformedTime(set: WorkoutSet) {
@@ -24,76 +29,224 @@ function getSetPerformedTime(set: WorkoutSet) {
 
 function formatTime(value?: string) {
   if (!value) return "Not recorded";
-  return new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  return new Date(value).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
-function compareNumber(current?: number, previous?: number, unit = "") {
-  if (current === undefined || previous === undefined) return null;
+function compareNumber(
+  current?: number,
+  previous?: number,
+  unit = ""
+) {
+  if (
+    current === undefined ||
+    previous === undefined
+  ) {
+    return null;
+  }
 
   const delta = current - previous;
 
-  if (delta > 0) return <span className="compare-up">+{delta}{unit}</span>;
-  if (delta < 0) return <span className="compare-down">{delta}{unit}</span>;
+  if (delta > 0) {
+    return (
+      <span className="compare-up">
+        +{delta}{unit}
+      </span>
+    );
+  }
+
+  if (delta < 0) {
+    return (
+      <span className="compare-down">
+        {delta}{unit}
+      </span>
+    );
+  }
 
   return <span className="compare-same">same</span>;
 }
 
-export function ExerciseSetRows({ workoutExerciseId, currentSets }: ExerciseSetRowsProps) {
-  const [drafts, setDrafts] = useState<Record<number, SetDraft>>({});
-  const [extraRows, setExtraRows] = useState(0);
-  const [editingNoteSetNumber, setEditingNoteSetNumber] = useState<number | null>(null);
-  const [noteDrafts, setNoteDrafts] = useState<Record<number, string>>({});
+function usesRequiredWeight(
+  measurementType: ExerciseMeasurementType
+) {
+  return measurementType === "weight_reps";
+}
 
-const previousPerformance = useLiveQuery(
-  () => getPreviousPerformance(workoutExerciseId),
-  [workoutExerciseId]
-);
+function displaysWeightInput(
+  measurementType: ExerciseMeasurementType
+) {
+  return measurementType !== "reps_only";
+}
+
+function weightPlaceholder(
+  measurementType: ExerciseMeasurementType
+) {
+  if (measurementType === "bodyweight_added_weight") {
+    return "Added wt";
+  }
+
+  return "Weight";
+}
+
+function displayWeight(
+  set: WorkoutSet,
+  measurementType: ExerciseMeasurementType
+) {
+  if (measurementType === "reps_only") {
+    return `${set.reps ?? "?"} reps`;
+  }
+
+  if (measurementType === "bodyweight_added_weight") {
+    const addedWeight = set.weight ?? 0;
+
+    return addedWeight === 0
+      ? `Bodyweight × ${set.reps ?? "?"}`
+      : `Bodyweight +${addedWeight} × ${set.reps ?? "?"}`;
+  }
+
+  return `${set.weight ?? "?"}×${set.reps ?? "?"}`;
+}
+
+export function ExerciseSetRows({
+  workoutExerciseId,
+  currentSets
+}: ExerciseSetRowsProps) {
+  const [drafts, setDrafts] = useState<
+    Record<number, SetDraft>
+  >({});
+  const [extraRows, setExtraRows] = useState(0);
+  const [
+    editingNoteSetNumber,
+    setEditingNoteSetNumber
+  ] = useState<number | null>(null);
+  const [noteDrafts, setNoteDrafts] = useState<
+    Record<number, string>
+  >({});
+
+  const context = useLiveQuery(
+    () => getWorkoutExerciseContext(workoutExerciseId),
+    [workoutExerciseId]
+  );
+
+  const previousPerformance = useLiveQuery(
+    () => getPreviousPerformance(workoutExerciseId),
+    [workoutExerciseId]
+  );
+
+  const measurementType =
+    context?.exercise.measurementType ?? "weight_reps";
 
   function getCurrentSet(setNumber: number) {
-    return currentSets.find((set) => set.setNumber === setNumber);
+    return currentSets.find(
+      (set) => set.setNumber === setNumber
+    );
   }
 
   function getPreviousSet(setNumber: number) {
-    return previousPerformance?.sets.find((set) => set.setNumber === setNumber);
+    return previousPerformance?.sets.find(
+      (set) => set.setNumber === setNumber
+    );
   }
 
-  function getDraft(setNumber: number) {
+  function getDraft(setNumber: number): SetDraft {
     const currentSet = getCurrentSet(setNumber);
 
-    return drafts[setNumber] ?? {
-      weight: currentSet?.weight?.toString() ?? "",
-      reps: currentSet?.reps?.toString() ?? ""
-    };
+    const storedWeight =
+      currentSet?.weight === 0 &&
+      measurementType !== "weight_reps"
+        ? ""
+        : currentSet?.weight?.toString() ?? "";
+
+    return (
+      drafts[setNumber] ?? {
+        weight: storedWeight,
+        reps: currentSet?.reps?.toString() ?? "",
+        actualRpe:
+          currentSet?.actualRpe?.toString() ?? ""
+      }
+    );
   }
 
-  async function saveWeightRepsIfReady(setNumber: number) {
+  async function savePerformanceIfReady(
+    setNumber: number
+  ) {
     const draft = getDraft(setNumber);
-    const weight = Number(draft.weight);
+
     const reps = Number(draft.reps);
 
     if (
-      !draft.weight ||
       !draft.reps ||
-      Number.isNaN(weight) ||
       Number.isNaN(reps)
     ) {
       return;
     }
 
-    await saveSetWeightAndReps(
+    let weight: number | undefined;
+
+    if (usesRequiredWeight(measurementType)) {
+      if (
+        !draft.weight ||
+        Number.isNaN(Number(draft.weight))
+      ) {
+        return;
+      }
+
+      weight = Number(draft.weight);
+    } else if (
+      measurementType === "bodyweight_added_weight"
+    ) {
+      weight =
+        draft.weight.trim() === ""
+          ? 0
+          : Number(draft.weight);
+
+      if (Number.isNaN(weight)) return;
+    } else {
+      weight = 0;
+    }
+
+    const actualRpe =
+      draft.actualRpe.trim() === ""
+        ? undefined
+        : Number(draft.actualRpe);
+
+    if (
+      actualRpe !== undefined &&
+      (
+        Number.isNaN(actualRpe) ||
+        actualRpe < 0 ||
+        actualRpe > 10
+      )
+    ) {
+      alert("RPE must be between 0 and 10.");
+      return;
+    }
+
+    await saveSetPerformance(
       workoutExerciseId,
       setNumber,
-      weight,
-      reps
+      {
+        weight,
+        reps,
+        actualRpe
+      }
     );
   }
 
-  function updateDraft(setNumber: number, field: "weight" | "reps", value: string) {
+  function updateDraft(
+    setNumber: number,
+    field: keyof SetDraft,
+    value: string
+  ) {
+    const currentDraft = getDraft(setNumber);
+
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       [setNumber]: {
-        weight: currentDrafts[setNumber]?.weight ?? getCurrentSet(setNumber)?.weight?.toString() ?? "",
-        reps: currentDrafts[setNumber]?.reps ?? getCurrentSet(setNumber)?.reps?.toString() ?? "",
+        ...currentDraft,
         [field]: value
       }
     }));
@@ -105,9 +258,13 @@ const previousPerformance = useLiveQuery(
     if (!currentSet) return;
 
     setEditingNoteSetNumber(setNumber);
+
     setNoteDrafts((currentNoteDrafts) => ({
       ...currentNoteDrafts,
-      [setNumber]: currentNoteDrafts[setNumber] ?? currentSet.notes ?? ""
+      [setNumber]:
+        currentNoteDrafts[setNumber] ??
+        currentSet.notes ??
+        ""
     }));
   }
 
@@ -127,7 +284,9 @@ const previousPerformance = useLiveQuery(
   async function deleteSet(set: WorkoutSet) {
     if (!set.id) return;
 
-    const confirmed = confirm(`Delete Set ${set.setNumber}?`);
+    const confirmed = confirm(
+      `Delete Set ${set.setNumber}?`
+    );
 
     if (!confirmed) return;
 
@@ -143,20 +302,40 @@ const previousPerformance = useLiveQuery(
   const maxExistingSetNumber = Math.max(
     0,
     ...currentSets.map((set) => set.setNumber),
-    ...(previousPerformance?.sets.map((set) => set.setNumber) ?? [])
+    ...(
+      previousPerformance?.sets.map(
+        (set) => set.setNumber
+      ) ?? []
+    )
   );
 
-  const rowCount = Math.max(1, maxExistingSetNumber + extraRows);
-  const setNumbers = Array.from({ length: rowCount }, (_, index) => index + 1);
+  const plannedSetCount =
+    context?.workoutExercise.plannedSetCount ?? 0;
+
+  const rowCount = Math.max(
+    1,
+    maxExistingSetNumber,
+    plannedSetCount
+  ) + extraRows;
+
+  const setNumbers = Array.from(
+    { length: rowCount },
+    (_, index) => index + 1
+  );
 
   return (
     <div className="set-entry-rows">
       {previousPerformance ? (
         <p className="previous-context">
-          Previous: {previousPerformance.workout.title || "Untitled"} — {previousPerformance.workout.date}
+          Previous:{" "}
+          {previousPerformance.workout.title ||
+            "Untitled"}{" "}
+          — {previousPerformance.workout.date}
         </p>
       ) : (
-        <p className="previous-context muted">Previous: none found</p>
+        <p className="previous-context muted">
+          Previous: none found
+        </p>
       )}
 
       {setNumbers.map((setNumber) => {
@@ -165,50 +344,140 @@ const previousPerformance = useLiveQuery(
         const draft = getDraft(setNumber);
 
         return (
-          <div className="set-entry-row" key={setNumber}>
+          <div
+            className="set-entry-row"
+            key={setNumber}
+          >
             <div className="set-entry-main">
               <strong>Set {setNumber}</strong>
 
-              <input
-                inputMode="decimal"
-                value={draft.weight}
-                onChange={(event) => updateDraft(setNumber, "weight", event.target.value)}
-                onBlur={() => saveWeightRepsIfReady(setNumber)}
-                placeholder="Weight"
-              />
+              {displaysWeightInput(measurementType) && (
+                <input
+                  inputMode="decimal"
+                  value={draft.weight}
+                  onChange={(event) =>
+                    updateDraft(
+                      setNumber,
+                      "weight",
+                      event.target.value
+                    )
+                  }
+                  onBlur={() =>
+                    savePerformanceIfReady(setNumber)
+                  }
+                  placeholder={weightPlaceholder(
+                    measurementType
+                  )}
+                />
+              )}
 
               <input
                 inputMode="numeric"
                 value={draft.reps}
-                onChange={(event) => updateDraft(setNumber, "reps", event.target.value)}
-                onBlur={() => saveWeightRepsIfReady(setNumber)}
+                onChange={(event) =>
+                  updateDraft(
+                    setNumber,
+                    "reps",
+                    event.target.value
+                  )
+                }
+                onBlur={() =>
+                  savePerformanceIfReady(setNumber)
+                }
                 placeholder="Reps"
+              />
+
+              <input
+                inputMode="decimal"
+                value={draft.actualRpe}
+                onChange={(event) =>
+                  updateDraft(
+                    setNumber,
+                    "actualRpe",
+                    event.target.value
+                  )
+                }
+                onBlur={() =>
+                  savePerformanceIfReady(setNumber)
+                }
+                placeholder="RPE"
               />
 
               <div className="previous-inline">
                 {previousSet ? (
                   <>
-                    Prev {previousSet.weight}×{previousSet.reps}
-                    {currentSet && (
-                      <span className="compact-comparison">
-                        {compareNumber(currentSet.weight, previousSet.weight, " lb")}
-                        <span className="comparison-separator">/</span>
-                        {compareNumber(currentSet.reps, previousSet.reps, " rep")}
-                      </span>
+                    Prev{" "}
+                    {displayWeight(
+                      previousSet,
+                      measurementType
                     )}
+
+                    {previousSet.actualRpe !==
+                      undefined && (
+                      <>
+                        {" "}
+                        @ {previousSet.actualRpe}
+                      </>
+                    )}
+
+                    {currentSet &&
+                      measurementType !==
+                        "reps_only" && (
+                        <span className="compact-comparison">
+                          {compareNumber(
+                            currentSet.weight,
+                            previousSet.weight,
+                            " lb"
+                          )}
+                          <span className="comparison-separator">
+                            /
+                          </span>
+                          {compareNumber(
+                            currentSet.reps,
+                            previousSet.reps,
+                            " rep"
+                          )}
+                        </span>
+                      )}
+
+                    {currentSet &&
+                      measurementType ===
+                        "reps_only" && (
+                        <span className="compact-comparison">
+                          {compareNumber(
+                            currentSet.reps,
+                            previousSet.reps,
+                            " rep"
+                          )}
+                        </span>
+                      )}
                   </>
                 ) : (
-                  <span className="muted">No previous set</span>
+                  <span className="muted">
+                    No previous set
+                  </span>
                 )}
               </div>
 
               {currentSet && (
                 <div className="button-row set-row-buttons">
-                  <button className="secondary-button" onClick={() => startEditingNote(setNumber)}>
-                    {currentSet.notes ? "Edit Note" : "Add Note"}
+                  <button
+                    className="secondary-button"
+                    onClick={() =>
+                      startEditingNote(setNumber)
+                    }
+                  >
+                    {currentSet.notes
+                      ? "Edit Note"
+                      : "Add Note"}
                   </button>
 
-                  <button className="secondary-button" onClick={() => deleteSet(currentSet)}>
+                  <button
+                    className="secondary-button"
+                    onClick={() =>
+                      deleteSet(currentSet)
+                    }
+                  >
                     Delete
                   </button>
                 </div>
@@ -216,42 +485,78 @@ const previousPerformance = useLiveQuery(
             </div>
 
             {previousSet?.notes && (
-              <p className="previous-note compact-note">Previous Note: {previousSet.notes}</p>
+              <p className="previous-note compact-note">
+                Previous Note: {previousSet.notes}
+              </p>
             )}
 
-            {currentSet?.notes && editingNoteSetNumber !== setNumber && (
-              <p className="set-note compact-note">Current Note: {currentSet.notes}</p>
-            )}
+            {currentSet?.notes &&
+              editingNoteSetNumber !== setNumber && (
+                <p className="set-note compact-note">
+                  Current Note: {currentSet.notes}
+                </p>
+              )}
 
-            {editingNoteSetNumber === setNumber && currentSet && (
-              <div className="note-editor">
-                <textarea
-                  value={noteDrafts[setNumber] ?? ""}
-                  onChange={(event) =>
-                    setNoteDrafts((currentNoteDrafts) => ({
-                      ...currentNoteDrafts,
-                      [setNumber]: event.target.value
-                    }))
-                  }
-                  placeholder="Current set note"
-                />
+            {editingNoteSetNumber === setNumber &&
+              currentSet && (
+                <div className="note-editor">
+                  <textarea
+                    value={
+                      noteDrafts[setNumber] ?? ""
+                    }
+                    onChange={(event) =>
+                      setNoteDrafts(
+                        (currentNoteDrafts) => ({
+                          ...currentNoteDrafts,
+                          [setNumber]:
+                            event.target.value
+                        })
+                      )
+                    }
+                    placeholder="Current set note"
+                  />
 
-                <div className="button-row">
-                  <button className="secondary-button" onClick={() => saveNote(setNumber)}>Save Note</button>
-                  <button className="secondary-button" onClick={() => setEditingNoteSetNumber(null)}>Cancel</button>
+                  <div className="button-row">
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        saveNote(setNumber)
+                      }
+                    >
+                      Save Note
+                    </button>
+
+                    <button
+                      className="secondary-button"
+                      onClick={() =>
+                        setEditingNoteSetNumber(null)
+                      }
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {currentSet && (
-              <p className="muted set-time-line">Logged: {formatTime(getSetPerformedTime(currentSet))}</p>
+              <p className="muted set-time-line">
+                Logged:{" "}
+                {formatTime(
+                  getSetPerformedTime(currentSet)
+                )}
+              </p>
             )}
           </div>
         );
       })}
 
-      <button className="secondary-button" onClick={() => setExtraRows((current) => current + 1)}>
-        + Add Set Row
+      <button
+        className="secondary-button"
+        onClick={() =>
+          setExtraRows((current) => current + 1)
+        }
+      >
+        + Add Set
       </button>
     </div>
   );

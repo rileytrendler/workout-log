@@ -6,6 +6,7 @@ import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
+import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
 import {
   deleteExercises,
   getOrCreateExercise,
@@ -482,16 +483,6 @@ function App() {
               <button onClick={startTodayWorkout}>Start Today's Workout</button>
             )}
 
-            <form className="inline-form exercise-add-form" onSubmit={addExercise}>
-              <ExerciseAutocomplete
-                exercises={exercises ?? []}
-                value={exerciseName}
-                onChange={setExerciseName}
-              />
-
-              <button type="submit">Add Exercise</button>
-            </form>
-
           </section>
 
           <section>
@@ -501,36 +492,71 @@ function App() {
               <div className="exercise-list">
                 {workoutExercises.map((workoutExercise) => {
                   const workoutExerciseId = workoutExercise.id;
-                  const sets = workoutExerciseId ? getSetsForWorkoutExercise(workoutExerciseId) : [];
+                  const sets = workoutExerciseId
+                    ? getSetsForWorkoutExercise(workoutExerciseId)
+                    : [];
 
                   return (
                     <div className="card" key={workoutExercise.id}>
                       <div className="exercise-header">
                         <div>
-                          <h3>{getExerciseName(workoutExercise.exerciseId)}</h3>
-                          <p className="muted">Started: {formatTime(workoutExercise.startedAt)}</p>
+                          <h3>
+                            {getExerciseName(
+                              workoutExercise.exerciseId
+                            )}
+                          </h3>
+
+                          <p className="muted">
+                            Started:{" "}
+                            {formatTime(
+                              workoutExercise.startedAt
+                            )}
+                          </p>
                         </div>
 
                         {workoutExerciseId && (
-                          <button className="danger secondary-button" onClick={() => deleteWorkoutExercise(workoutExerciseId)}>
+                          <button
+                            className="danger secondary-button"
+                            onClick={() =>
+                              deleteWorkoutExercise(
+                                workoutExerciseId
+                              )
+                            }
+                          >
                             Remove
                           </button>
                         )}
                       </div>
 
+                      <ExerciseDetailsPanel
+                        exerciseId={
+                          workoutExercise.exerciseId
+                        }
+                      />
+
                       {workoutExerciseId && (
                         <label className="field-label">
-                          Exercise Notes
+                          Today's Exercise Notes
                           <textarea
-                            value={workoutExercise.notes ?? ""}
-                            onChange={(event) => handleWorkoutExerciseNotesChange(workoutExerciseId, event.target.value)}
-                            placeholder="Machine settings, seat height, grip, form cues..."
+                            value={
+                              workoutExercise.notes ?? ""
+                            }
+                            onChange={(event) =>
+                              handleWorkoutExerciseNotesChange(
+                                workoutExerciseId,
+                                event.target.value
+                              )
+                            }
+                            placeholder="Notes specific to today's performance, setup changes, pain, fatigue..."
                           />
                         </label>
                       )}
+
                       {workoutExerciseId && (
                         <ExerciseSetRows
-                          workoutExerciseId={workoutExerciseId}
+                          workoutExerciseId={
+                            workoutExerciseId
+                          }
                           currentSets={sets}
                         />
                       )}
@@ -539,8 +565,29 @@ function App() {
                 })}
               </div>
             ) : (
-              <p>No exercises added to today's workout yet.</p>
+              <p>
+                No exercises added to today's workout yet.
+              </p>
             )}
+          </section>
+
+          <section className="card add-exercise-card">
+            <h3>Add Exercise</h3>
+
+            <form
+              className="inline-form exercise-add-form"
+              onSubmit={addExercise}
+            >
+              <ExerciseAutocomplete
+                exercises={exercises ?? []}
+                value={exerciseName}
+                onChange={setExerciseName}
+              />
+
+              <button type="submit">
+                Add Exercise
+              </button>
+            </form>
           </section>
         </>
       )}

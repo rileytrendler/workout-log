@@ -10,6 +10,8 @@ export type WorkoutLogBackup = {
     workouts: unknown[];
     workoutExercises: unknown[];
     workoutSets: unknown[];
+    workoutTemplates: unknown[];
+    workoutTemplateExercises: unknown[];
   };
 };
 
@@ -23,7 +25,10 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
       exercises: await db.exercises.toArray(),
       workouts: await db.workouts.toArray(),
       workoutExercises: await db.workoutExercises.toArray(),
-      workoutSets: await db.workoutSets.toArray()
+      workoutSets: await db.workoutSets.toArray(),
+      workoutTemplates: await db.workoutTemplates.toArray(),
+      workoutTemplateExercises:
+        await db.workoutTemplateExercises.toArray()
     }
   };
 }
@@ -55,19 +60,48 @@ export async function importJsonBackup(file: File) {
 
   if (!confirmed) return;
 
-  await db.transaction("rw", db.gyms, db.exercises, db.workouts, db.workoutExercises, db.workoutSets, async () => {
-    await db.workoutSets.clear();
-    await db.workoutExercises.clear();
-    await db.workouts.clear();
-    await db.exercises.clear();
-    await db.gyms.clear();
+  await db.transaction(
+    "rw",
+    [
+      db.gyms,
+      db.exercises,
+      db.workouts,
+      db.workoutExercises,
+      db.workoutSets,
+      db.workoutTemplates,
+      db.workoutTemplateExercises
+    ],
+    async () => {
+      await db.workoutTemplateExercises.clear();
+      await db.workoutTemplates.clear();
+      await db.workoutSets.clear();
+      await db.workoutExercises.clear();
+      await db.workouts.clear();
+      await db.exercises.clear();
+      await db.gyms.clear();
 
-    await db.gyms.bulkAdd(parsed.data.gyms as never[]);
-    await db.exercises.bulkAdd(parsed.data.exercises as never[]);
-    await db.workouts.bulkAdd(parsed.data.workouts as never[]);
-    await db.workoutExercises.bulkAdd(parsed.data.workoutExercises as never[]);
-    await db.workoutSets.bulkAdd(parsed.data.workoutSets as never[]);
-  });
+      await db.gyms.bulkAdd(parsed.data.gyms as never[]);
+      await db.exercises.bulkAdd(parsed.data.exercises as never[]);
+
+      await db.workoutTemplates.bulkAdd(
+        (parsed.data.workoutTemplates ?? []) as never[]
+      );
+
+      await db.workoutTemplateExercises.bulkAdd(
+        (parsed.data.workoutTemplateExercises ?? []) as never[]
+      );
+
+      await db.workouts.bulkAdd(parsed.data.workouts as never[]);
+
+      await db.workoutExercises.bulkAdd(
+        parsed.data.workoutExercises as never[]
+      );
+
+      await db.workoutSets.bulkAdd(
+        parsed.data.workoutSets as never[]
+      );
+    }
+  );
 }
 
 function csvEscape(value: unknown) {
@@ -120,7 +154,7 @@ export async function downloadSetsCsv() {
       "setNumber",
       "weight",
       "reps",
-      "rpe",
+      "actualrpe",
       "rir",
       "isWarmup",
       "isFailure",
@@ -167,7 +201,7 @@ export async function downloadSetsCsv() {
       set.setNumber,
       set.weight,
       set.reps,
-      set.rpe,
+      set.actualRpe,
       set.rir,
       set.isWarmup,
       set.isFailure,

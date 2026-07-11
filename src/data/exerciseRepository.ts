@@ -1,5 +1,5 @@
 import { db } from "../db/db";
-import type { Exercise } from "../db/types";
+import type { Exercise, ExerciseMeasurementType } from "../db/types";
 
 function nowString() {
   return new Date().toISOString();
@@ -24,7 +24,9 @@ export async function getOrCreateExercise(name: string): Promise<number> {
   return await db.exercises.add({
     name: trimmedName,
     defaultUnit: "lb",
-    createdAt: nowString()
+    measurementType: "weight_reps",
+    createdAt: nowString(),
+    updatedAt: nowString()
   });
 }
 
@@ -47,4 +49,32 @@ export async function deleteExercises(exerciseIds: number[]): Promise<void> {
   if (!exerciseIds.length) return;
 
   await db.exercises.bulkDelete(exerciseIds);
+}
+
+export type ExerciseDetailChanges = {
+  measurementType: ExerciseMeasurementType;
+  setupNotes?: string;
+  formCues?: string;
+  generalNotes?: string;
+  defaultRestSeconds?: number;
+};
+
+export async function getExerciseById(
+  exerciseId: number
+): Promise<Exercise | undefined> {
+  return await db.exercises.get(exerciseId);
+}
+
+export async function updateExerciseDetails(
+  exerciseId: number,
+  changes: ExerciseDetailChanges
+): Promise<void> {
+  await db.exercises.update(exerciseId, {
+    measurementType: changes.measurementType,
+    setupNotes: changes.setupNotes?.trim() || undefined,
+    formCues: changes.formCues?.trim() || undefined,
+    generalNotes: changes.generalNotes?.trim() || undefined,
+    defaultRestSeconds: changes.defaultRestSeconds,
+    updatedAt: nowString()
+  });
 }

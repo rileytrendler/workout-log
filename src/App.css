@@ -461,3 +461,61 @@ textarea {
     top: calc(100% - 20px);
   }
 }
+
+select {
+  min-width: 0;
+  padding: 12px;
+  font-size: 16px;
+  font-family: inherit;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: white;
+}
+
+.exercise-library-details {
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f7f7f7;
+}
+
+.exercise-library-details p {
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+
+.exercise-details-editor {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+
+.add-exercise-card {
+  margin-top: 20px;
+}
+
+.set-entry-main {
+  grid-template-columns:
+    56px
+    minmax(70px, 100px)
+    minmax(65px, 85px)
+    minmax(60px, 75px)
+    1fr
+    auto;
+}
+
+@media (max-width: 700px) {
+  .set-entry-main {
+    grid-template-columns:
+      52px
+      minmax(0, 1fr)
+      minmax(0, 1fr)
+      minmax(0, 0.8fr);
+  }
+
+  .previous-inline,
+  .set-row-buttons {
+    grid-column: 2 / -1;
+  }
+}

@@ -1,3 +1,8 @@
+export type ExerciseMeasurementType =
+  | "weight_reps"
+  | "reps_only"
+  | "bodyweight_added_weight";
+
 export type Gym = {
   id?: number;
   name: string;
@@ -10,8 +15,13 @@ export type Exercise = {
   name: string;
   category?: string;
   defaultUnit: "lb" | "kg";
-  notes?: string;
+  measurementType?: ExerciseMeasurementType;
+  setupNotes?: string;
+  formCues?: string;
+  generalNotes?: string;
+  defaultRestSeconds?: number;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type Workout = {
@@ -33,8 +43,19 @@ export type WorkoutExercise = {
   workoutId: number;
   exerciseId: number;
   order: number;
+
   notes?: string;
   startedAt?: string;
+
+  plannedSetCount?: number;
+  targetMinReps?: number;
+  targetMaxReps?: number;
+  targetRpeMin?: number;
+  targetRpeMax?: number;
+  targetRestSeconds?: number;
+  warmupInstructions?: string;
+  prescriptionNotes?: string;
+
   createdAt?: string;
   updatedAt?: string;
 };
@@ -45,7 +66,7 @@ export type WorkoutSet = {
   setNumber: number;
   weight?: number;
   reps?: number;
-  rpe?: number;
+  actualRpe?: number;
   rir?: number;
   isWarmup?: boolean;
   isFailure?: boolean;
@@ -53,4 +74,32 @@ export type WorkoutSet = {
   performedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type WorkoutTemplate = {
+  id?: number;
+  name: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkoutTemplateExercise = {
+  id?: number;
+  templateId: number;
+  exerciseId: number;
+  order: number;
+
+  plannedSetCount?: number;
+  targetMinReps?: number;
+  targetMaxReps?: number;
+  targetRpeMin?: number;
+  targetRpeMax?: number;
+  targetRestSeconds?: number;
+
+  warmupInstructions?: string;
+  prescriptionNotes?: string;
+
+  createdAt: string;
+  updatedAt: string;
 };

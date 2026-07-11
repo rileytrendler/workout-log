@@ -1,11 +1,42 @@
 import { db } from "../db/db";
-import type { Workout, WorkoutExercise, WorkoutSet } from "../db/types";
+import type {
+  Exercise,
+  Workout,
+  WorkoutExercise,
+  WorkoutSet
+} from "../db/types";
 
 export type PreviousPerformanceResult = {
   workout: Workout;
   workoutExercise: WorkoutExercise;
   sets: WorkoutSet[];
 };
+
+export type WorkoutExerciseContext = {
+  workoutExercise: WorkoutExercise;
+  exercise: Exercise;
+};
+
+export async function getWorkoutExerciseContext(
+  workoutExerciseId: number
+): Promise<WorkoutExerciseContext | null> {
+  const workoutExercise = await db.workoutExercises.get(
+    workoutExerciseId
+  );
+
+  if (!workoutExercise) return null;
+
+  const exercise = await db.exercises.get(
+    workoutExercise.exerciseId
+  );
+
+  if (!exercise) return null;
+
+  return {
+    workoutExercise,
+    exercise
+  };
+}
 
 function nowString() {
   return new Date().toISOString();
@@ -84,13 +115,20 @@ export async function getPreviousPerformance(
   };
 }
 
-export async function saveSetWeightAndReps(
+export type SetPerformanceInput = {
+  weight?: number;
+  reps: number;
+  actualRpe?: number;
+};
+
+export async function saveSetPerformance(
   workoutExerciseId: number,
   setNumber: number,
-  weight: number,
-  reps: number
+  input: SetPerformanceInput
 ): Promise<number> {
-  const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+  const workoutExercise = await db.workoutExercises.get(
+    workoutExerciseId
+  );
 
   if (!workoutExercise) {
     throw new Error("Workout exercise could not be found.");
@@ -99,33 +137,30 @@ export async function saveSetWeightAndReps(
   const existingSet = await db.workoutSets
     .where("[workoutExerciseId+setNumber]")
     .equals([workoutExerciseId, setNumber])
-    .first()
-    .catch(() => undefined);
-
-  const fallbackExistingSet =
-    existingSet ??
-    (await db.workoutSets
-      .where("workoutExerciseId")
-      .equals(workoutExerciseId)
-      .filter((set) => set.setNumber === setNumber)
-      .first());
+    .first();
 
   const now = nowString();
 
-  if (fallbackExistingSet?.id) {
-    await db.transaction("rw", db.workoutSets, db.workouts, async () => {
-      await db.workoutSets.update(fallbackExistingSet.id!, {
-        weight,
-        reps,
-        updatedAt: now
-      });
+  if (existingSet?.id) {
+    await db.transaction(
+      "rw",
+      db.workoutSets,
+      db.workouts,
+      async () => {
+        await db.workoutSets.update(existingSet.id!, {
+          weight: input.weight,
+          reps: input.reps,
+          actualRpe: input.actualRpe,
+          updatedAt: now
+        });
 
-      await db.workouts.update(workoutExercise.workoutId, {
-        updatedAt: now
-      });
-    });
+        await db.workouts.update(workoutExercise.workoutId, {
+          updatedAt: now
+        });
+      }
+    );
 
-    return fallbackExistingSet.id;
+    return existingSet.id;
   }
 
   return await db.transaction(
@@ -136,8 +171,9 @@ export async function saveSetWeightAndReps(
       const setId = await db.workoutSets.add({
         workoutExerciseId,
         setNumber,
-        weight,
-        reps,
+        weight: input.weight,
+        reps: input.reps,
+        actualRpe: input.actualRpe,
         performedAt: now,
         createdAt: now,
         updatedAt: now
