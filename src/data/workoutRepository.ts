@@ -1,0 +1,237 @@
+import { db } from "../db/db";
+import type { Workout, WorkoutExercise, WorkoutSet } from "../db/types";
+
+export type PreviousPerformanceResult = {
+  workout: Workout;
+  workoutExercise: WorkoutExercise;
+  sets: WorkoutSet[];
+};
+
+function nowString() {
+  return new Date().toISOString();
+}
+
+function getSetPerformedTime(set: WorkoutSet) {
+  return set.performedAt ?? set.createdAt;
+}
+
+export async function getPreviousPerformance(
+  workoutExerciseId: number
+): Promise<PreviousPerformanceResult | null> {
+  const currentWorkoutExercise = await db.workoutExercises.get(workoutExerciseId);
+
+  if (!currentWorkoutExercise) return null;
+
+  const currentWorkout = await db.workouts.get(currentWorkoutExercise.workoutId);
+
+  if (!currentWorkout) return null;
+
+  const matchingExerciseRows = await db.workoutExercises
+    .where("exerciseId")
+    .equals(currentWorkoutExercise.exerciseId)
+    .toArray();
+
+  const candidates: {
+    workout: Workout;
+    workoutExercise: WorkoutExercise;
+    sortTime: number;
+  }[] = [];
+
+  const currentWorkoutTime = new Date(
+    currentWorkout.startTime ?? currentWorkout.createdAt
+  ).getTime();
+
+  for (const workoutExercise of matchingExerciseRows) {
+    if (
+      !workoutExercise.id ||
+      workoutExercise.workoutId === currentWorkoutExercise.workoutId
+    ) {
+      continue;
+    }
+
+    const candidateWorkout = await db.workouts.get(workoutExercise.workoutId);
+
+    if (!candidateWorkout) continue;
+
+    const candidateWorkoutTime = new Date(
+      candidateWorkout.startTime ?? candidateWorkout.createdAt
+    ).getTime();
+
+    if (candidateWorkoutTime >= currentWorkoutTime) continue;
+
+    candidates.push({
+      workout: candidateWorkout,
+      workoutExercise,
+      sortTime: candidateWorkoutTime
+    });
+  }
+
+  candidates.sort((a, b) => b.sortTime - a.sortTime);
+
+  const previous = candidates[0];
+
+  if (!previous?.workoutExercise.id) return null;
+
+  const sets = await db.workoutSets
+    .where("workoutExerciseId")
+    .equals(previous.workoutExercise.id)
+    .sortBy("setNumber");
+
+  return {
+    workout: previous.workout,
+    workoutExercise: previous.workoutExercise,
+    sets
+  };
+}
+
+export async function saveSetWeightAndReps(
+  workoutExerciseId: number,
+  setNumber: number,
+  weight: number,
+  reps: number
+): Promise<number> {
+  const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+
+  if (!workoutExercise) {
+    throw new Error("Workout exercise could not be found.");
+  }
+
+  const existingSet = await db.workoutSets
+    .where("[workoutExerciseId+setNumber]")
+    .equals([workoutExerciseId, setNumber])
+    .first()
+    .catch(() => undefined);
+
+  const fallbackExistingSet =
+    existingSet ??
+    (await db.workoutSets
+      .where("workoutExerciseId")
+      .equals(workoutExerciseId)
+      .filter((set) => set.setNumber === setNumber)
+      .first());
+
+  const now = nowString();
+
+  if (fallbackExistingSet?.id) {
+    await db.transaction("rw", db.workoutSets, db.workouts, async () => {
+      await db.workoutSets.update(fallbackExistingSet.id!, {
+        weight,
+        reps,
+        updatedAt: now
+      });
+
+      await db.workouts.update(workoutExercise.workoutId, {
+        updatedAt: now
+      });
+    });
+
+    return fallbackExistingSet.id;
+  }
+
+  return await db.transaction(
+    "rw",
+    db.workoutSets,
+    db.workouts,
+    async () => {
+      const setId = await db.workoutSets.add({
+        workoutExerciseId,
+        setNumber,
+        weight,
+        reps,
+        performedAt: now,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      await db.workouts.update(workoutExercise.workoutId, {
+        lastSetAt: now,
+        updatedAt: now
+      });
+
+      return setId;
+    }
+  );
+}
+
+export async function updateSetNote(
+  setId: number,
+  notes: string
+): Promise<void> {
+  await db.workoutSets.update(setId, {
+    notes: notes.trim() || undefined,
+    updatedAt: nowString()
+  });
+}
+
+export async function updateSetPerformedTime(
+  setId: number,
+  performedAt?: string
+): Promise<void> {
+  const set = await db.workoutSets.get(setId);
+
+  if (!set) {
+    throw new Error("Set could not be found.");
+  }
+
+  await db.workoutSets.update(setId, {
+    performedAt,
+    updatedAt: nowString()
+  });
+
+  const workoutExercise = await db.workoutExercises.get(
+    set.workoutExerciseId
+  );
+
+  if (workoutExercise) {
+    await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
+  }
+}
+
+export async function deleteWorkoutSet(setId: number): Promise<void> {
+  const set = await db.workoutSets.get(setId);
+
+  if (!set) return;
+
+  const workoutExercise = await db.workoutExercises.get(
+    set.workoutExerciseId
+  );
+
+  await db.workoutSets.delete(setId);
+
+  if (workoutExercise) {
+    await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
+  }
+}
+
+export async function recalculateWorkoutLastSetAt(
+  workoutId: number
+): Promise<void> {
+  const workoutExercises = await db.workoutExercises
+    .where("workoutId")
+    .equals(workoutId)
+    .toArray();
+
+  const workoutExerciseIds = workoutExercises
+    .map((workoutExercise) => workoutExercise.id)
+    .filter((id): id is number => id !== undefined);
+
+  let latestSetTime: string | undefined;
+
+  if (workoutExerciseIds.length) {
+    const sets = await db.workoutSets
+      .where("workoutExerciseId")
+      .anyOf(workoutExerciseIds)
+      .toArray();
+
+    latestSetTime = sets
+      .map(getSetPerformedTime)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1);
+  }
+
+  await db.workouts.update(workoutId, {
+    lastSetAt: latestSetTime,
+    updatedAt: nowString()
+  });
+}

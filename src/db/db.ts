@@ -18,6 +18,14 @@ class WorkoutLogDatabase extends Dexie {
       workoutExercises: "++id, workoutId, exerciseId, order",
       workoutSets: "++id, workoutExerciseId, setNumber"
     });
+
+    this.version(2).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      workouts: "++id, date, gymId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]"
+    });
   }
 }
 
