@@ -18,6 +18,8 @@ import {
   applyWorkoutTemplateToDate,
   getOrCreateWorkoutForDate,
   removeExerciseFromWorkout,
+  updateHistoricalSet,
+  updateSetPerformedTime,
   updateWorkoutExerciseNotes,
   updateWorkoutText
 } from "./data/workoutRepository";
@@ -391,19 +393,32 @@ function App() {
     const notesText = prompt("Correct set notes:", set.notes ?? "");
     if (notesText === null) return;
 
+    const rpeText = prompt("Correct RPE (0–10, decimals allowed; leave blank to clear):", set.actualRpe?.toString() ?? "");
+    if (rpeText === null) return;
+
     const weight = Number(weightText);
     const reps = Number(repsText);
+    const trimmedRpe = rpeText.trim();
+    const actualRpe = trimmedRpe === "" ? undefined : Number(trimmedRpe);
 
     if (!weightText || !repsText || Number.isNaN(weight) || Number.isNaN(reps)) {
       alert("Weight and reps must be numbers.");
       return;
     }
 
-    await db.workoutSets.update(set.id, {
+    if (
+      actualRpe !== undefined &&
+      (!Number.isFinite(actualRpe) || actualRpe < 0 || actualRpe > 10)
+    ) {
+      alert("RPE must be a number between 0 and 10, inclusive, or left blank.");
+      return;
+    }
+
+    await updateHistoricalSet(set.id, {
       weight,
       reps,
+      actualRpe,
       notes: notesText.trim() || undefined,
-      updatedAt: nowString()
     });
   }
 
@@ -417,16 +432,7 @@ function App() {
 
     const performedAt = fromDateTimeLocalValue(newValue);
 
-    await db.workoutSets.update(set.id, {
-      performedAt,
-      updatedAt: nowString()
-    });
-
-    const workoutExercise = await db.workoutExercises.get(set.workoutExerciseId);
-
-    if (workoutExercise?.workoutId) {
-      await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
-    }
+    await updateSetPerformedTime(set.id, performedAt);
   }
 
   async function editWorkoutTiming(workoutToEdit: Workout) {
@@ -508,7 +514,9 @@ function App() {
   function renderSetLine(set: WorkoutSet, showFullDetails: boolean) {
     return (
       <>
-        <strong>Set {set.setNumber}:</strong> {set.weight} lb × {set.reps} {showFullDetails && <span className="muted">({formatTime(getSetPerformedTime(set))})</span>}
+        <strong>Set {set.setNumber}:</strong> {set.weight} lb × {set.reps}
+        {set.actualRpe !== undefined && <> · RPE {set.actualRpe}</>}
+        {showFullDetails && <> <span className="muted">({formatTime(getSetPerformedTime(set))})</span></>}
         {showFullDetails && set.notes && <p className="set-note">{set.notes}</p>}
       </>
     );

@@ -154,7 +154,7 @@ export async function downloadSetsCsv() {
       "setNumber",
       "weight",
       "reps",
-      "actualrpe",
+      "actualRpe",
       "rir",
       "isWarmup",
       "isFailure",

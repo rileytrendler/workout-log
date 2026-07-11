@@ -334,6 +334,26 @@ export async function updateSetNote(
   });
 }
 
+export type HistoricalSetChanges = {
+  weight: number;
+  reps: number;
+  actualRpe?: number;
+  notes?: string;
+};
+
+export async function updateHistoricalSet(
+  setId: number,
+  changes: HistoricalSetChanges
+): Promise<void> {
+  await db.workoutSets.update(setId, {
+    weight: changes.weight,
+    reps: changes.reps,
+    actualRpe: changes.actualRpe,
+    notes: changes.notes?.trim() || undefined,
+    updatedAt: nowString()
+  });
+}
+
 export async function updateSetPerformedTime(
   setId: number,
   performedAt?: string
