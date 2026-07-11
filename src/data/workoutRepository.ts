@@ -3,8 +3,16 @@ import type {
   Exercise,
   Workout,
   WorkoutExercise,
-  WorkoutSet
+  WorkoutSet,
+  WorkoutTemplateExercise
 } from "../db/types";
+
+export type ApplyWorkoutTemplateResult = {
+  workout: Workout;
+  createdWorkout: boolean;
+  addedExerciseCount: number;
+  skippedExerciseNames: string[];
+};
 
 export type PreviousPerformanceResult = {
   workout: Workout;
@@ -44,6 +52,133 @@ function nowString() {
 
 function getSetPerformedTime(set: WorkoutSet) {
   return set.performedAt ?? set.createdAt;
+}
+
+function snapshotTemplateExercise(
+  templateExercise: WorkoutTemplateExercise,
+  workoutId: number,
+  order: number,
+  now: string
+): WorkoutExercise {
+  return {
+    workoutId,
+    exerciseId: templateExercise.exerciseId,
+    order,
+    plannedSetCount: templateExercise.plannedSetCount,
+    targetMinReps: templateExercise.targetMinReps,
+    targetMaxReps: templateExercise.targetMaxReps,
+    targetRpeMin: templateExercise.targetRpeMin,
+    targetRpeMax: templateExercise.targetRpeMax,
+    targetRestSeconds: templateExercise.targetRestSeconds,
+    warmupInstructions: templateExercise.warmupInstructions,
+    prescriptionNotes: templateExercise.prescriptionNotes,
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export async function applyWorkoutTemplateToDate(
+  date: string,
+  templateId: number
+): Promise<ApplyWorkoutTemplateResult> {
+  return await db.transaction(
+    "rw",
+    db.workoutTemplates,
+    db.workoutTemplateExercises,
+    db.workouts,
+    db.workoutExercises,
+    db.exercises,
+    async () => {
+      const template = await db.workoutTemplates.get(templateId);
+
+      if (!template) {
+        throw new Error("Workout template could not be found.");
+      }
+
+      const templateExercises = await db.workoutTemplateExercises
+        .where("templateId")
+        .equals(templateId)
+        .sortBy("order");
+
+      if (!templateExercises.length) {
+        throw new Error(
+          `“${template.name}” is empty. Add at least one exercise before starting it.`
+        );
+      }
+
+      const now = nowString();
+      let workout = await db.workouts.where("date").equals(date).first();
+      const createdWorkout = !workout;
+
+      if (!workout) {
+        const workoutId = await db.workouts.add({
+          date,
+          title: template.name,
+          notes: template.notes?.trim() || undefined,
+          startTime: now,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        workout = await db.workouts.get(workoutId);
+      }
+
+      if (!workout?.id) {
+        throw new Error("Workout could not be created.");
+      }
+
+      const existingRows = await db.workoutExercises
+        .where("workoutId")
+        .equals(workout.id)
+        .toArray();
+      const existingExerciseIds = new Set(
+        existingRows.map((row) => row.exerciseId)
+      );
+      const exercisesToAdd = templateExercises.filter(
+        (row) => !existingExerciseIds.has(row.exerciseId)
+      );
+      const skippedExerciseIds = templateExercises
+        .filter((row) => existingExerciseIds.has(row.exerciseId))
+        .map((row) => row.exerciseId);
+      const nextOrder =
+        Math.max(0, ...existingRows.map((row) => row.order)) + 1;
+
+      if (exercisesToAdd.length) {
+        await db.workoutExercises.bulkAdd(
+          exercisesToAdd.map((row, index) =>
+            snapshotTemplateExercise(
+              row,
+              workout!.id!,
+              nextOrder + index,
+              now
+            )
+          )
+        );
+      }
+
+      await db.workouts.update(workout.id, { updatedAt: now });
+
+      const skippedExercises = skippedExerciseIds.length
+        ? await db.exercises.bulkGet(skippedExerciseIds)
+        : [];
+      const updatedWorkout = await db.workouts.get(workout.id);
+
+      if (!updatedWorkout) {
+        throw new Error("Workout could not be loaded.");
+      }
+
+      return {
+        workout: updatedWorkout,
+        createdWorkout,
+        addedExerciseCount: exercisesToAdd.length,
+        skippedExerciseNames: skippedExercises.map(
+          (exercise, index) =>
+            exercise?.name ?? `Exercise ${skippedExerciseIds[index]}`
+        )
+      };
+    }
+  );
 }
 
 export async function getPreviousPerformance(

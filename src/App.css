@@ -645,3 +645,43 @@ button:disabled {
 .add-template-exercise-card {
   margin-top: 16px;
 }
+
+.template-start-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.template-start-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+
+.template-start-button span {
+  color: #666;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.prescription-summary {
+  margin: 12px 0;
+  padding: 10px;
+  border-left: 3px solid #888;
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 14px;
+}
+
+.prescription-summary p {
+  margin: 3px 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 520px) {
+  .template-start-list {
+    grid-template-columns: 1fr;
+  }
+}
