@@ -7,6 +7,7 @@ import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/b
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
+import { TemplateEditor } from "./components/TemplateEditor";
 import {
   deleteExercises,
   getOrCreateExercise,
@@ -14,6 +15,7 @@ import {
 } from "./data/exerciseRepository";
 import {
   addExerciseToWorkout,
+  applyWorkoutTemplateToDate,
   getOrCreateWorkoutForDate,
   removeExerciseFromWorkout,
   updateWorkoutExerciseNotes,
@@ -81,7 +83,9 @@ function fromDateTimeLocalValue(value: string) {
 function App() {
   const today = todayString();
 
-  const [page, setPage] = useState<"today" | "history" | "settings">("today");
+  const [page, setPage] = useState<
+    "today" | "history" | "templates" | "settings"
+  >("today");
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
   const [exerciseName, setExerciseName] = useState("");
@@ -106,6 +110,11 @@ function App() {
 
   const exercises = useLiveQuery(
     () => db.exercises.orderBy("name").toArray(),
+    []
+  );
+
+  const templates = useLiveQuery(
+    () => db.workoutTemplates.orderBy("name").toArray(),
     []
   );
 
@@ -243,6 +252,75 @@ function App() {
 
   async function startTodayWorkout() {
     await getOrCreateWorkoutForDate(today);
+  }
+
+  async function startOrAddFromTemplate(templateId: number, templateName: string) {
+    if (workout) {
+      const confirmed = confirm(
+        `Add template “${templateName}” to today's workout? Exercises already in the workout will be skipped.`
+      );
+
+      if (!confirmed) return;
+    }
+
+    try {
+      const result = await applyWorkoutTemplateToDate(today, templateId);
+
+      if (result.skippedExerciseNames.length) {
+        alert(
+          `Added ${result.addedExerciseCount} exercise(s). Skipped existing exercise(s):\n- ${result.skippedExerciseNames.join("\n- ")}`
+        );
+      } else if (!result.createdWorkout) {
+        alert(`Added ${result.addedExerciseCount} exercise(s) from “${templateName}”.`);
+      }
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "The workout template could not be added."
+      );
+    }
+  }
+
+  function renderPrescriptionSummary(workoutExercise: WorkoutExercise) {
+    const items: string[] = [];
+
+    if (workoutExercise.plannedSetCount !== undefined) {
+      items.push(`${workoutExercise.plannedSetCount} working set${workoutExercise.plannedSetCount === 1 ? "" : "s"}`);
+    }
+
+    if (workoutExercise.targetMinReps !== undefined || workoutExercise.targetMaxReps !== undefined) {
+      const reps = workoutExercise.targetMinReps === workoutExercise.targetMaxReps
+        ? `${workoutExercise.targetMinReps}`
+        : `${workoutExercise.targetMinReps ?? "?"}–${workoutExercise.targetMaxReps ?? "?"}`;
+      items.push(`${reps} reps`);
+    }
+
+    if (workoutExercise.targetRpeMin !== undefined || workoutExercise.targetRpeMax !== undefined) {
+      const rpe = workoutExercise.targetRpeMin === workoutExercise.targetRpeMax
+        ? `${workoutExercise.targetRpeMin}`
+        : `${workoutExercise.targetRpeMin ?? "?"}–${workoutExercise.targetRpeMax ?? "?"}`;
+      items.push(`RPE ${rpe}`);
+    }
+
+    if (workoutExercise.targetRestSeconds !== undefined) {
+      items.push(`${workoutExercise.targetRestSeconds}s rest`);
+    }
+
+    const hasText = workoutExercise.warmupInstructions || workoutExercise.prescriptionNotes;
+    if (!items.length && !hasText) return null;
+
+    return (
+      <div className="prescription-summary">
+        {items.length > 0 && <p>{items.join(" · ")}</p>}
+        {workoutExercise.warmupInstructions && (
+          <p><strong>Warmup:</strong> {workoutExercise.warmupInstructions}</p>
+        )}
+        {workoutExercise.prescriptionNotes && (
+          <p><strong>Prescription:</strong> {workoutExercise.prescriptionNotes}</p>
+        )}
+      </div>
+    );
   }
 
   async function updateWorkoutTitle(title: string) {
@@ -441,9 +519,41 @@ function App() {
       <h1>Workout Log</h1>
 
       <nav className="tabs">
-        <button className={page === "today" ? "active-tab" : ""} onClick={() => setPage("today")}>Today</button>
-        <button className={page === "history" ? "active-tab" : ""} onClick={() => setPage("history")}>History</button>
-        <button className={page === "settings" ? "active-tab" : ""} onClick={() => setPage("settings")}>Settings</button>
+        <button
+          className={
+            page === "today" ? "active-tab" : ""
+          }
+          onClick={() => setPage("today")}
+        >
+          Today
+        </button>
+
+        <button
+          className={
+            page === "history" ? "active-tab" : ""
+          }
+          onClick={() => setPage("history")}
+        >
+          History
+        </button>
+
+        <button
+          className={
+            page === "templates" ? "active-tab" : ""
+          }
+          onClick={() => setPage("templates")}
+        >
+          Templates
+        </button>
+
+        <button
+          className={
+            page === "settings" ? "active-tab" : ""
+          }
+          onClick={() => setPage("settings")}
+        >
+          Settings
+        </button>
       </nav>
 
       {page === "today" && (
@@ -485,6 +595,29 @@ function App() {
 
           </section>
 
+          <section className="card start-template-card">
+            <h2>Start From Template</h2>
+
+            {templates?.length ? (
+              <div className="template-start-list">
+                {templates.map((template) => (
+                  <button
+                    type="button"
+                    className="template-start-button"
+                    key={template.id}
+                    disabled={!template.id}
+                    onClick={() => template.id && startOrAddFromTemplate(template.id, template.name)}
+                  >
+                    <strong>{template.name}</strong>
+                    {template.notes && <span>{template.notes}</span>}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No saved workout templates yet. Create one on the Templates page.</p>
+            )}
+          </section>
+
           <section>
             <h2>Today's Exercises</h2>
 
@@ -492,7 +625,7 @@ function App() {
               <div className="exercise-list">
                 {workoutExercises.map((workoutExercise) => {
                   const workoutExerciseId = workoutExercise.id;
-                  const sets = workoutExerciseId
+                  const sets = workoutExerciseId !== undefined
                     ? getSetsForWorkoutExercise(workoutExerciseId)
                     : [];
 
@@ -514,7 +647,7 @@ function App() {
                           </p>
                         </div>
 
-                        {workoutExerciseId && (
+                        {workoutExerciseId !== undefined && (
                           <button
                             className="danger secondary-button"
                             onClick={() =>
@@ -534,7 +667,9 @@ function App() {
                         }
                       />
 
-                      {workoutExerciseId && (
+                      {renderPrescriptionSummary(workoutExercise)}
+
+                      {workoutExerciseId !== undefined && (
                         <label className="field-label">
                           Today's Exercise Notes
                           <textarea
@@ -552,12 +687,15 @@ function App() {
                         </label>
                       )}
 
-                      {workoutExerciseId && (
+                      {workoutExerciseId !== undefined && (
                         <ExerciseSetRows
                           workoutExerciseId={
                             workoutExerciseId
                           }
                           currentSets={sets}
+                          plannedSetCount={
+                            workoutExercise.plannedSetCount
+                          }
                         />
                       )}
                     </div>
@@ -703,6 +841,12 @@ function App() {
           )}
         </section>
 
+      )}
+
+      {page === "templates" && (
+        <TemplateEditor
+          exercises={exercises ?? []}
+        />
       )}
 
       {page === "settings" && (

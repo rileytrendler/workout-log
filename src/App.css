@@ -519,3 +519,169 @@ select {
     grid-column: 2 / -1;
   }
 }
+
+.template-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.template-list-item {
+  width: 100%;
+  text-align: left;
+}
+
+.selected-template-item {
+  border-color: #111;
+  font-weight: 700;
+}
+
+.template-editor-panel {
+  min-width: 0;
+}
+
+.template-editor-heading,
+.template-exercise-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.template-editor-heading h3 {
+  margin-top: 0;
+}
+
+.template-exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.template-exercise-card {
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: white;
+}
+
+.template-exercise-header {
+  margin-bottom: 12px;
+}
+
+.template-order-number {
+  display: inline-block;
+  min-width: 28px;
+  font-weight: 700;
+}
+
+.template-target-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    3,
+    minmax(0, 1fr)
+  );
+  gap: 8px 12px;
+}
+
+.template-target-grid .field-label {
+  margin: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 760px) {
+  .template-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .template-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .template-list-item {
+    width: auto;
+    min-width: max-content;
+  }
+
+  .template-target-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .tabs {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .tabs button {
+    flex: 0 0 auto;
+  }
+
+  .template-editor-heading,
+  .template-exercise-header {
+    flex-direction: column;
+  }
+
+  .template-target-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.add-template-exercise-card {
+  margin-top: 16px;
+}
+
+.template-start-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.template-start-button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+
+.template-start-button span {
+  color: #666;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.prescription-summary {
+  margin: 12px 0;
+  padding: 10px;
+  border-left: 3px solid #888;
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 14px;
+}
+
+.prescription-summary p {
+  margin: 3px 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 520px) {
+  .template-start-list {
+    grid-template-columns: 1fr;
+  }
+}

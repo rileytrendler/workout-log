@@ -15,6 +15,7 @@ import type {
 type ExerciseSetRowsProps = {
   workoutExerciseId: number;
   currentSets: WorkoutSet[];
+  plannedSetCount?: number;
 };
 
 type SetDraft = {
@@ -112,7 +113,8 @@ function displayWeight(
 
 export function ExerciseSetRows({
   workoutExerciseId,
-  currentSets
+  currentSets,
+  plannedSetCount
 }: ExerciseSetRowsProps) {
   const [drafts, setDrafts] = useState<
     Record<number, SetDraft>
@@ -309,13 +311,10 @@ export function ExerciseSetRows({
     )
   );
 
-  const plannedSetCount =
-    context?.workoutExercise.plannedSetCount ?? 0;
-
   const rowCount = Math.max(
     1,
     maxExistingSetNumber,
-    plannedSetCount
+    plannedSetCount ?? 0
   ) + extraRows;
 
   const setNumbers = Array.from(
