@@ -102,6 +102,25 @@ class WorkoutLogDatabase extends Dexie {
       programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]"
     });
 
+    this.version(7)
+      .stores({
+        gyms: "++id, name, createdAt",
+        exercises: "++id, name, category, createdAt",
+        exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+        workouts: "++id, date, status, gymId, createdAt, updatedAt",
+        workoutExercises: "++id, workoutId, exerciseId, order",
+        workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+        workoutTemplates: "++id, name, createdAt, updatedAt",
+        workoutTemplateExercises: "++id, templateId, exerciseId, order",
+        programs: "++id, name, createdAt, updatedAt",
+        programWeeks: "++id, programId, order, [programId+order]",
+        programWorkouts: "++id, programWeekId, templateId, order, [programWeekId+order]",
+        programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]"
+      })
+      .upgrade((transaction) => transaction.table("workouts").toCollection().modify((workout) => {
+        if (!workout.status) workout.status = "completed";
+      }));
+
   }
 }
 

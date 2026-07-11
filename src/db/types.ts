@@ -27,6 +27,8 @@ export type Exercise = {
 export type Workout = {
   id?: number;
   date: string;
+  status?: "active" | "completed";
+  completedAt?: string;
   gymId?: number;
   bodyweight?: number;
   title?: string;

@@ -19,9 +19,12 @@ import {
 } from "./data/exerciseRepository";
 import {
   addExerciseToWorkout,
-  applyWorkoutTemplateToDate,
-  getOrCreateWorkoutForDate,
+  finishWorkout,
+  getActiveWorkout,
+  reopenWorkout,
   removeExerciseFromWorkout,
+  startBlankWorkout,
+  startWorkoutFromTemplate,
   updateHistoricalSet,
   updateSetPerformedTime,
   updateWorkoutExerciseNotes,
@@ -31,7 +34,9 @@ import {
 import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
 
 function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
 }
 
 function nowString() {
@@ -92,8 +97,8 @@ function App() {
   const today = todayString();
 
   const [page, setPage] = useState<
-    "today" | "history" | "templates" | "programs" | "settings"
-  >("today");
+    "active" | "history" | "templates" | "programs" | "settings"
+  >("active");
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
   const [exerciseName, setExerciseName] = useState("");
@@ -103,13 +108,11 @@ function App() {
 
   const gyms = useLiveQuery<Gym[]>(() => db.gyms.orderBy("name").toArray(), []);
 
-  const workout = useLiveQuery(
-    () => db.workouts.where("date").equals(today).first(),
-    [today]
-  );
+  const workout = useLiveQuery(() => getActiveWorkout(), []);
 
   const workouts = useLiveQuery(
-    () => db.workouts.orderBy("date").reverse().toArray(),
+    async () => (await db.workouts.toArray()).sort((a, b) =>
+      (b.startTime ?? b.createdAt).localeCompare(a.startTime ?? a.createdAt) || (b.id ?? 0) - (a.id ?? 0)),
     []
   );
 
@@ -292,21 +295,25 @@ function App() {
     });
   }
 
-  async function startTodayWorkout() {
-    await getOrCreateWorkoutForDate(today, "Today's Workout", await getValidLastGymId());
+  async function startNewBlankWorkout() {
+    try {
+      await startBlankWorkout(today, "Workout", await getValidLastGymId());
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Workout could not be started.");
+    }
   }
 
   async function startOrAddFromTemplate(templateId: number, templateName: string) {
     if (workout) {
       const confirmed = confirm(
-        `Add template “${templateName}” to today's workout? Exercises already in the workout will be skipped.`
+        `Add template “${templateName}” to the active workout? Exercises already in the workout will be skipped.`
       );
 
       if (!confirmed) return;
     }
 
     try {
-      const result = await applyWorkoutTemplateToDate(today, templateId, await getValidLastGymId());
+      const result = await startWorkoutFromTemplate(today, templateId, await getValidLastGymId());
 
       if (result.skippedExerciseNames.length) {
         alert(
@@ -400,10 +407,10 @@ function App() {
 
     try {
       const exerciseId = await getOrCreateExercise(trimmedName);
-      const currentWorkout = await getOrCreateWorkoutForDate(today, "Today's Workout", await getValidLastGymId());
+      const currentWorkout = await getActiveWorkout();
 
-      if (!currentWorkout.id) {
-        throw new Error("Workout ID is missing.");
+      if (!currentWorkout?.id) {
+        throw new Error("Start a workout before adding an exercise.");
       }
 
       await addExerciseToWorkout(
@@ -579,6 +586,32 @@ function App() {
     setFullWorkoutView(false);
   }
 
+  async function handleFinishWorkout() {
+    if (!workout?.id) return;
+    const hasCompletedSets = workoutSets?.some((set) => set.performedAt || set.createdAt) ?? false;
+    const message = hasCompletedSets
+      ? "Finish this workout? It will move to History."
+      : "Finish this workout with no completed sets? It will move to History.";
+    if (!confirm(message)) return;
+    try {
+      await finishWorkout(workout.id);
+      restTimer.dismiss();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Workout could not be finished.");
+    }
+  }
+
+  async function handleReopenWorkout(workoutToReopen: Workout) {
+    if (!workoutToReopen.id || !confirm("Reopen this workout as the active workout?")) return;
+    try {
+      await reopenWorkout(workoutToReopen.id);
+      restTimer.dismiss();
+      setPage("active");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Workout could not be reopened.");
+    }
+  }
+
   function renderSetLine(set: WorkoutSet, showFullDetails: boolean) {
     return (
       <>
@@ -597,11 +630,11 @@ function App() {
       <nav className="tabs">
         <button
           className={
-            page === "today" ? "active-tab" : ""
+            page === "active" ? "active-tab" : ""
           }
-          onClick={() => setPage("today")}
+          onClick={() => setPage("active")}
         >
-          Today
+          Active
         </button>
 
         <button
@@ -639,7 +672,7 @@ function App() {
         </button>
       </nav>
 
-      {page === "today" && (
+      {page === "active" && (
         <>
           {restTimer.timer && (
             <RestTimerBar
@@ -652,8 +685,10 @@ function App() {
             />
           )}
           <section className="card">
-            <h2>Today</h2>
-            <p>{today}</p>
+            <div className="active-workout-heading">
+              <div><h2>Active Workout</h2>{workout && <span className="active-badge">Active</span>}</div>
+              {workout?.id && <button onClick={handleFinishWorkout}>Finish Workout</button>}
+            </div>
 
             {workout ? (
               <>
@@ -684,6 +719,7 @@ function App() {
                 </label>
 
                 <p className="success">Workout started at {formatTime(workout.startTime ?? workout.createdAt)}.</p>
+                <p>Date: {workout.date} · Started: {formatDateTime(workout.startTime ?? workout.createdAt)}</p>
                 <p>Duration: {formatDuration(workout.startTime ?? workout.createdAt, getWorkoutEffectiveEndTime(workout))}</p>
 
                 <button className="secondary-button" onClick={() => editWorkoutTiming(workout)}>Edit Date/Timing</button>
@@ -691,7 +727,7 @@ function App() {
                 <p>Workout end is based on the most recently added set.</p>
               </>
             ) : (
-              <button onClick={startTodayWorkout}>Start Today's Workout</button>
+              <div className="empty-active-state"><p><strong>No active workout</strong></p><button onClick={startNewBlankWorkout}>Start Blank Workout</button></div>
             )}
 
           </section>
@@ -720,7 +756,7 @@ function App() {
           </section>
 
           <section>
-            <h2>Today's Exercises</h2>
+            <h2>Active Workout Exercises</h2>
 
             {workoutExercises?.length ? (
               <div className="exercise-list">
@@ -790,7 +826,7 @@ function App() {
 
                       {workoutExerciseId !== undefined && (
                         <label className="field-label">
-                          Today's Exercise Notes
+                          Exercise Notes
                           <textarea
                             value={
                               workoutExercise.notes ?? ""
@@ -801,7 +837,7 @@ function App() {
                                 event.target.value
                               )
                             }
-                            placeholder="Notes specific to today's performance, setup changes, pain, fatigue..."
+                            placeholder="Notes specific to this performance, setup changes, pain, fatigue..."
                           />
                         </label>
                       )}
@@ -826,12 +862,12 @@ function App() {
               </div>
             ) : (
               <p>
-                No exercises added to today's workout yet.
+                {workout ? "No exercises added to this workout yet." : "Start a workout to add exercises."}
               </p>
             )}
           </section>
 
-          <section className="card add-exercise-card">
+          {workout && <section className="card add-exercise-card">
             <h3>Add Exercise</h3>
 
             <form
@@ -848,7 +884,7 @@ function App() {
                 Add Exercise
               </button>
             </form>
-          </section>
+          </section>}
         </>
       )}
 
@@ -892,12 +928,15 @@ function App() {
                         </button>
                         <button className="secondary-button" onClick={() => editHistoricalWorkoutText(selectedWorkout)}>Edit Text</button>
                         <button className="secondary-button" onClick={() => editWorkoutTiming(selectedWorkout)}>Edit Date/Timing</button>
+                        {selectedWorkout.status !== "active" && <button className="secondary-button" onClick={() => handleReopenWorkout(selectedWorkout)}>Reopen Workout</button>}
                       </div>
                     </div>
 
                     <p>Started: {formatDateTime(selectedWorkout.startTime ?? selectedWorkout.createdAt)}</p>
                     <p>Last set: {formatDateTime(getWorkoutEffectiveEndTime(selectedWorkout))}</p>
                     <p>Duration: {formatDuration(selectedWorkout.startTime ?? selectedWorkout.createdAt, getWorkoutEffectiveEndTime(selectedWorkout))}</p>
+                    <p>Status: {selectedWorkout.status === "active" ? "Active" : "Completed"}</p>
+                    {selectedWorkout.completedAt && <p>Completed: {formatDateTime(selectedWorkout.completedAt)}</p>}
                     {selectedWorkout.gymId !== undefined && <p>Gym: {gymName(gyms, selectedWorkout.gymId)}</p>}
 
                     <label className="field-label compact-gym-field">

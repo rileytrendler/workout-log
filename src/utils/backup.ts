@@ -66,6 +66,14 @@ export async function importJsonBackup(file: File) {
     throw new Error("This does not look like a valid workout log backup file.");
   }
 
+  const importedWorkouts = (parsed.data.workouts ?? []).map((workout) => ({
+    ...(workout as Record<string, unknown>),
+    status: (workout as Record<string, unknown>).status ?? "completed"
+  }));
+  if (importedWorkouts.filter((workout) => workout.status === "active").length > 1) {
+    throw new Error("This backup contains more than one active workout and cannot be imported safely.");
+  }
+
   const confirmed = confirm("Importing this backup will replace all current local workout data. Continue?");
 
   if (!confirmed) return;
@@ -119,7 +127,7 @@ export async function importJsonBackup(file: File) {
       await db.programWorkouts.bulkAdd((parsed.data.programWorkouts ?? []) as never[]);
       await db.programWorkoutExerciseOverrides.bulkAdd((parsed.data.programWorkoutExerciseOverrides ?? []) as never[]);
 
-      await db.workouts.bulkAdd(parsed.data.workouts as never[]);
+      await db.workouts.bulkAdd(importedWorkouts as never[]);
 
       await db.workoutExercises.bulkAdd(
         parsed.data.workoutExercises as never[]
@@ -180,6 +188,8 @@ export async function downloadSetsCsv() {
       "workoutNotes",
       "workoutStartTime",
       "workoutLastSetAt",
+      "workoutStatus",
+      "workoutCompletedAt",
       "exerciseName",
       "exerciseNotes",
       "setNumber",
@@ -228,6 +238,8 @@ export async function downloadSetsCsv() {
       workout?.notes,
       workout?.startTime,
       workout?.lastSetAt,
+      workout?.status ?? "completed",
+      workout?.completedAt,
       exercise?.name,
       workoutExercise?.notes,
       set.setNumber,

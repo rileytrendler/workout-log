@@ -94,7 +94,7 @@ function snapshotTemplateExercise(
   };
 }
 
-export async function applyWorkoutTemplateToDate(
+export async function startWorkoutFromTemplate(
   date: string,
   templateId: number,
   defaultGymId?: number
@@ -125,12 +125,13 @@ export async function applyWorkoutTemplateToDate(
       }
 
       const now = nowString();
-      let workout = await db.workouts.where("date").equals(date).first();
+      let workout = await db.workouts.where("status").equals("active").first();
       const createdWorkout = !workout;
 
       if (!workout) {
         const workoutId = await db.workouts.add({
           date,
+          status: "active",
           gymId: defaultGymId,
           title: template.name,
           notes: template.notes?.trim() || undefined,
@@ -505,38 +506,46 @@ export async function recalculateWorkoutLastSetAt(
   });
 }
 
-export async function getOrCreateWorkoutForDate(
+export async function getActiveWorkout(): Promise<Workout | undefined> {
+  return db.workouts.where("status").equals("active").first();
+}
+
+export async function startBlankWorkout(
   date: string,
-  defaultTitle = "Today's Workout",
+  defaultTitle = "Workout",
   defaultGymId?: number
 ): Promise<Workout> {
-  const existingWorkout = await db.workouts
-    .where("date")
-    .equals(date)
-    .first();
-
-  if (existingWorkout) {
-    return existingWorkout;
-  }
-
-  const now = nowString();
-
-  const workoutId = await db.workouts.add({
-    date,
-    gymId: defaultGymId,
-    title: defaultTitle,
-    startTime: now,
-    createdAt: now,
-    updatedAt: now
+  return db.transaction("rw", db.workouts, async () => {
+    const existing = await getActiveWorkout();
+    if (existing) throw new Error("A workout is already active. Finish it before starting another.");
+    const now = nowString();
+    const id = await db.workouts.add({ date, status: "active", gymId: defaultGymId, title: defaultTitle, startTime: now, createdAt: now, updatedAt: now });
+    const workout = await db.workouts.get(id);
+    if (!workout) throw new Error("Workout could not be created.");
+    return workout;
   });
+}
 
-  const workout = await db.workouts.get(workoutId);
+export async function finishWorkout(workoutId: number): Promise<Workout> {
+  return db.transaction("rw", db.workouts, async () => {
+    const workout = await db.workouts.get(workoutId);
+    if (!workout || workout.status !== "active") throw new Error("This workout is no longer active.");
+    const now = nowString();
+    await db.workouts.update(workoutId, { status: "completed", completedAt: now, updatedAt: now });
+    return { ...workout, status: "completed", completedAt: now, updatedAt: now };
+  });
+}
 
-  if (!workout) {
-    throw new Error("Workout could not be created.");
-  }
-
-  return workout;
+export async function reopenWorkout(workoutId: number): Promise<Workout> {
+  return db.transaction("rw", db.workouts, async () => {
+    const existing = await getActiveWorkout();
+    if (existing && existing.id !== workoutId) throw new Error("Finish the current active workout before reopening another workout.");
+    const workout = await db.workouts.get(workoutId);
+    if (!workout) throw new Error("Workout could not be found.");
+    const now = nowString();
+    await db.workouts.update(workoutId, { status: "active", completedAt: undefined, updatedAt: now });
+    return { ...workout, status: "active", completedAt: undefined, updatedAt: now };
+  });
 }
 
 export async function updateWorkoutGym(workoutId: number, gymId?: number): Promise<void> {

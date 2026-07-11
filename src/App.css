@@ -121,6 +121,11 @@ textarea { min-height: 58px; resize: vertical; }
 .exercise-list, .template-exercise-list { display: flex; flex-direction: column; gap: 8px; }
 .exercise-list > .card { margin: 0; }
 .success { color: var(--accent-strong); font-weight: 700; }
+.active-workout-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.active-workout-heading > div { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.active-workout-heading h2 { margin: 0; }
+.active-badge { padding: 2px 7px; border-radius: 999px; color: var(--accent-strong); background: var(--accent-soft); font-size: .72rem; font-weight: 800; }
+.empty-active-state { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 0 2px; }
 .muted { color: var(--muted-text); font-size: .82rem; }
 .note-block { padding: 8px; border-radius: 7px; color: var(--text); background-color: var(--surface-muted); white-space: pre-wrap; }
 
