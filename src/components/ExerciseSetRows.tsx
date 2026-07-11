@@ -18,6 +18,7 @@ type ExerciseSetRowsProps = {
   workoutExerciseId: number;
   currentSets: WorkoutSet[];
   plannedSetCount?: number;
+  onWorkingSetCreated?: (setId: number, setNumber: number) => void;
 };
 
 type SetDraft = {
@@ -116,7 +117,8 @@ function displayWeight(
 export function ExerciseSetRows({
   workoutExerciseId,
   currentSets,
-  plannedSetCount
+  plannedSetCount,
+  onWorkingSetCreated
 }: ExerciseSetRowsProps) {
   const [drafts, setDrafts] = useState<
     Record<number, SetDraft>
@@ -270,7 +272,7 @@ export function ExerciseSetRows({
       return;
     }
 
-    await saveSetPerformance(
+    const result = await saveSetPerformance(
       workoutExerciseId,
       setNumber,
       {
@@ -279,6 +281,10 @@ export function ExerciseSetRows({
         actualRpe
       }
     );
+
+    if (result.created) {
+      onWorkingSetCreated?.(result.setId, setNumber);
+    }
   }
 
   function updateDraft(

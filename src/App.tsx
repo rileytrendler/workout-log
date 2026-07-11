@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db/db";
 import type { Gym, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
@@ -9,6 +9,8 @@ import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./components/ExerciseGymProfilePanel";
 import { TemplateEditor } from "./components/TemplateEditor";
+import { RestTimerBar } from "./components/RestTimerBar";
+import { useRestTimer } from "./hooks/useRestTimer";
 import {
   deleteExercises,
   getOrCreateExercise,
@@ -95,6 +97,8 @@ function App() {
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
   const [exerciseName, setExerciseName] = useState("");
   const [newGymName, setNewGymName] = useState("");
+  const restTimer = useRestTimer();
+  const { timer: activeRestTimer, dismiss: dismissRestTimer } = restTimer;
 
   const gyms = useLiveQuery<Gym[]>(() => db.gyms.orderBy("name").toArray(), []);
 
@@ -151,6 +155,35 @@ function App() {
     },
     [workoutExercises]
   );
+
+  useEffect(() => {
+    if (!activeRestTimer || workoutExercises === undefined || workout === undefined) return;
+    const associatedExerciseExists = workout?.id === activeRestTimer.workoutId &&
+      workoutExercises.some((row) => row.id === activeRestTimer.workoutExerciseId);
+    if (!associatedExerciseExists) dismissRestTimer();
+  }, [workout, workoutExercises, activeRestTimer, dismissRestTimer]);
+
+  function getRestDuration(workoutExercise: WorkoutExercise) {
+    const exercise = exercises?.find((row) => row.id === workoutExercise.exerciseId);
+    const duration = workoutExercise.targetRestSeconds ?? exercise?.defaultRestSeconds;
+    return duration !== undefined && Number.isFinite(duration) && duration > 0
+      ? Math.floor(duration)
+      : undefined;
+  }
+
+  function startRest(workoutExercise: WorkoutExercise, setId: number, setNumber: number) {
+    if (!workout?.id || !workoutExercise.id) return;
+    const durationSeconds = getRestDuration(workoutExercise);
+    if (!durationSeconds) return;
+    restTimer.start({
+      workoutId: workout.id,
+      workoutExerciseId: workoutExercise.id,
+      setId,
+      exerciseName: getExerciseName(workoutExercise.exerciseId),
+      setNumber,
+      durationSeconds
+    });
+  }
 
   const selectedWorkoutExercises = useLiveQuery<WorkoutExercise[]>(
     async () => {
@@ -600,6 +633,16 @@ function App() {
 
       {page === "today" && (
         <>
+          {restTimer.timer && (
+            <RestTimerBar
+              timer={restTimer.timer}
+              onPause={restTimer.pause}
+              onResume={restTimer.resume}
+              onReset={restTimer.reset}
+              onAdjust={restTimer.adjust}
+              onDismiss={restTimer.dismiss}
+            />
+          )}
           <section className="card">
             <h2>Today</h2>
             <p>{today}</p>
@@ -678,6 +721,8 @@ function App() {
                   const sets = workoutExerciseId !== undefined
                     ? getSetsForWorkoutExercise(workoutExerciseId)
                     : [];
+                  const restDuration = getRestDuration(workoutExercise);
+                  const latestSet = [...sets].sort((a, b) => b.setNumber - a.setNumber)[0];
 
                   return (
                     <div className="card" key={workoutExercise.id}>
@@ -717,6 +762,16 @@ function App() {
                         }
                       />
 
+                      {restDuration && workoutExerciseId !== undefined && (
+                        <button
+                          type="button"
+                          className="secondary-button tiny-button start-rest-button"
+                          onClick={() => startRest(workoutExercise, latestSet?.id ?? -1, latestSet?.setNumber ?? 1)}
+                        >
+                          Start Rest · {Math.floor(restDuration / 60)}:{(restDuration % 60).toString().padStart(2, "0")}
+                        </button>
+                      )}
+
                       <ExerciseGymProfilePanel
                         exerciseId={workoutExercise.exerciseId}
                         gymId={workout?.gymId}
@@ -751,6 +806,9 @@ function App() {
                           currentSets={sets}
                           plannedSetCount={
                             workoutExercise.plannedSetCount
+                          }
+                          onWorkingSetCreated={(setId, setNumber) =>
+                            startRest(workoutExercise, setId, setNumber)
                           }
                         />
                       )}

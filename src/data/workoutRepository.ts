@@ -336,7 +336,7 @@ export async function saveSetPerformance(
   workoutExerciseId: number,
   setNumber: number,
   input: SetPerformanceInput
-): Promise<number> {
+): Promise<{ setId: number; created: boolean }> {
   const workoutExercise = await db.workoutExercises.get(
     workoutExerciseId
   );
@@ -371,10 +371,10 @@ export async function saveSetPerformance(
       }
     );
 
-    return existingSet.id;
+    return { setId: existingSet.id, created: false };
   }
 
-  return await db.transaction(
+  const setId = await db.transaction(
     "rw",
     db.workoutSets,
     db.workouts,
@@ -398,6 +398,8 @@ export async function saveSetPerformance(
       return setId;
     }
   );
+
+  return { setId, created: true };
 }
 
 export async function updateSetNote(

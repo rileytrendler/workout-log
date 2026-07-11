@@ -135,6 +135,14 @@ textarea { min-height: 58px; resize: vertical; }
 .exercise-header .muted { margin-top: 2px; }
 .prescription-summary { margin: 8px 0; padding: 7px 9px; border-left: 3px solid var(--accent); border-radius: 0 7px 7px 0; color: var(--muted-text); background-color: var(--accent-soft); font-size: .8rem; }
 .prescription-summary p { margin: 2px 0; white-space: pre-wrap; }
+.start-rest-button { margin: 2px 0 5px; }
+.rest-timer { position: sticky; z-index: 15; top: 6px; display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr); gap: 8px; align-items: center; margin: 0 0 10px; padding: 9px 10px; border: 1px solid var(--accent); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 4px 14px rgb(23 33 27 / 14%); backdrop-filter: blur(8px); }
+.rest-timer-expired { border-color: var(--accent-strong); background: var(--accent-soft); }
+.rest-timer-status { display: flex; flex-direction: column; min-width: 0; }
+.rest-timer-status strong { font-size: 1.25rem; line-height: 1.1; }
+.rest-timer-label { overflow: hidden; font-size: .78rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.rest-timer-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; min-width: 0; }
+.rest-timer-controls .secondary-button { min-height: 34px; padding: 5px 8px; font-size: .74rem; }
 .exercise-library-details { margin: 8px 0; padding: 8px; border-radius: 7px; background-color: var(--surface-muted); }
 .exercise-library-details p { margin: 3px 0; white-space: pre-wrap; }
 .exercise-details-editor { margin: 8px 0; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
@@ -222,6 +230,8 @@ textarea { min-height: 58px; resize: vertical; }
 }
 
 @media (max-width: 520px) {
+  .rest-timer { grid-template-columns: 1fr; }
+  .rest-timer-controls { justify-content: flex-start; }
   .inline-form { grid-template-columns: minmax(0, 1fr) auto; }
   .exercise-header { align-items: flex-start; }
   .history-detail-header, .template-editor-heading { flex-direction: column; }
