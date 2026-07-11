@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   deleteWorkoutSet,
-  getPreviousPerformance,
+  getExerciseComparisons,
   getWorkoutExerciseContext,
   saveSetPerformance,
-  updateSetNote
+  updateSetNote,
+  type PriorExercisePerformance
 } from "../data/workoutRepository";
 import type {
   ExerciseMeasurementType,
@@ -133,13 +134,15 @@ export function ExerciseSetRows({
     [workoutExerciseId]
   );
 
-  const previousPerformance = useLiveQuery(
-    () => getPreviousPerformance(workoutExerciseId),
+  const comparisons = useLiveQuery(
+    () => getExerciseComparisons(workoutExerciseId),
     [workoutExerciseId]
   );
 
   const measurementType =
     context?.exercise.measurementType ?? "weight_reps";
+  const primaryPerformance =
+    comparisons?.lastAtCurrentGym ?? comparisons?.latestAnywhere;
 
   function getCurrentSet(setNumber: number) {
     return currentSets.find(
@@ -148,7 +151,7 @@ export function ExerciseSetRows({
   }
 
   function getPreviousSet(setNumber: number) {
-    return previousPerformance?.sets.find(
+    return primaryPerformance?.sets.find(
       (set) => set.setNumber === setNumber
     );
   }
@@ -301,15 +304,7 @@ export function ExerciseSetRows({
     });
   }
 
-  const maxExistingSetNumber = Math.max(
-    0,
-    ...currentSets.map((set) => set.setNumber),
-    ...(
-      previousPerformance?.sets.map(
-        (set) => set.setNumber
-      ) ?? []
-    )
-  );
+  const maxExistingSetNumber = Math.max(0, ...currentSets.map((set) => set.setNumber));
 
   const rowCount = Math.max(
     1,
@@ -324,13 +319,15 @@ export function ExerciseSetRows({
 
   return (
     <div className="set-entry-rows">
-      {previousPerformance ? (
-        <p className="previous-context">
-          Previous:{" "}
-          {previousPerformance.workout.title ||
-            "Untitled"}{" "}
-          — {previousPerformance.workout.date}
-        </p>
+      {primaryPerformance ? (
+        <div className="performance-comparisons">
+          {comparisons?.lastAtCurrentGym && (
+            <PerformanceSummary label="Last at this gym" performance={comparisons.lastAtCurrentGym} measurementType={measurementType} />
+          )}
+          {comparisons?.latestAnywhere && (
+            <PerformanceSummary label="Latest anywhere" performance={comparisons.latestAnywhere} measurementType={measurementType} secondary />
+          )}
+        </div>
       ) : (
         <p className="previous-context muted">
           Previous: none found
@@ -557,6 +554,29 @@ export function ExerciseSetRows({
       >
         + Add Set
       </button>
+    </div>
+  );
+}
+
+function PerformanceSummary({ label, performance, measurementType, secondary = false }: {
+  label: string;
+  performance: PriorExercisePerformance;
+  measurementType: ExerciseMeasurementType;
+  secondary?: boolean;
+}) {
+  return (
+    <div className={`performance-summary${secondary ? " secondary" : ""}`}>
+      <strong>{label}</strong>
+      <span>{performance.workout.date}{performance.gymName ? ` · ${performance.gymName}` : ""}</span>
+      <div className="performance-set-list">
+        {performance.sets.map((set) => (
+          <span key={set.id ?? set.setNumber}>
+            Set {set.setNumber}: {displayWeight(set, measurementType)}
+            {set.actualRpe !== undefined ? ` @ ${set.actualRpe}` : ""}
+            {set.notes ? ` · ${set.notes}` : ""}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

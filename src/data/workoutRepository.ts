@@ -14,10 +14,16 @@ export type ApplyWorkoutTemplateResult = {
   skippedExerciseNames: string[];
 };
 
-export type PreviousPerformanceResult = {
+export type PriorExercisePerformance = {
   workout: Workout;
   workoutExercise: WorkoutExercise;
   sets: WorkoutSet[];
+  gymName?: string;
+};
+
+export type ExerciseComparisonResult = {
+  lastAtCurrentGym?: PriorExercisePerformance;
+  latestAnywhere?: PriorExercisePerformance;
 };
 
 export type WorkoutExerciseContext = {
@@ -183,72 +189,77 @@ export async function applyWorkoutTemplateToDate(
   );
 }
 
-export async function getPreviousPerformance(
+export async function getExerciseComparisons(
   workoutExerciseId: number
-): Promise<PreviousPerformanceResult | null> {
+): Promise<ExerciseComparisonResult> {
   const currentWorkoutExercise = await db.workoutExercises.get(workoutExerciseId);
 
-  if (!currentWorkoutExercise) return null;
+  if (!currentWorkoutExercise) return {};
 
   const currentWorkout = await db.workouts.get(currentWorkoutExercise.workoutId);
 
-  if (!currentWorkout) return null;
+  if (!currentWorkout) return {};
 
   const matchingExerciseRows = await db.workoutExercises
     .where("exerciseId")
     .equals(currentWorkoutExercise.exerciseId)
     .toArray();
 
-  const candidates: {
-    workout: Workout;
-    workoutExercise: WorkoutExercise;
-    sortTime: number;
-  }[] = [];
-
   const currentWorkoutTime = new Date(
     currentWorkout.startTime ?? currentWorkout.createdAt
   ).getTime();
+  const priorRows = matchingExerciseRows.filter(
+    (row): row is WorkoutExercise & { id: number } =>
+      row.id !== undefined && row.workoutId !== currentWorkoutExercise.workoutId
+  );
+  const workouts = await db.workouts.bulkGet(priorRows.map((row) => row.workoutId));
+  const sets = priorRows.length
+    ? await db.workoutSets.where("workoutExerciseId").anyOf(priorRows.map((row) => row.id)).toArray()
+    : [];
+  const setsByWorkoutExercise = new Map<number, WorkoutSet[]>();
 
-  for (const workoutExercise of matchingExerciseRows) {
-    if (
-      !workoutExercise.id ||
-      workoutExercise.workoutId === currentWorkoutExercise.workoutId
-    ) {
-      continue;
-    }
-
-    const candidateWorkout = await db.workouts.get(workoutExercise.workoutId);
-
-    if (!candidateWorkout) continue;
-
-    const candidateWorkoutTime = new Date(
-      candidateWorkout.startTime ?? candidateWorkout.createdAt
-    ).getTime();
-
-    if (candidateWorkoutTime >= currentWorkoutTime) continue;
-
-    candidates.push({
-      workout: candidateWorkout,
-      workoutExercise,
-      sortTime: candidateWorkoutTime
-    });
+  for (const set of sets) {
+    if (set.isWarmup || set.reps === undefined || !getSetPerformedTime(set)) continue;
+    const existing = setsByWorkoutExercise.get(set.workoutExerciseId) ?? [];
+    existing.push(set);
+    setsByWorkoutExercise.set(set.workoutExerciseId, existing);
   }
 
-  candidates.sort((a, b) => b.sortTime - a.sortTime);
+  const candidates = priorRows.flatMap((workoutExercise, index) => {
+    const workout = workouts[index];
+    const usableSets = setsByWorkoutExercise.get(workoutExercise.id);
+    if (!workout || !usableSets?.length) return [];
+    const sortTime = new Date(workout.startTime ?? workout.createdAt).getTime();
+    if (!Number.isFinite(sortTime) || sortTime >= currentWorkoutTime) return [];
+    return [{ workout, workoutExercise, sets: usableSets.sort((a, b) => a.setNumber - b.setNumber), sortTime }];
+  }).sort((a, b) => b.sortTime - a.sortTime);
 
-  const previous = candidates[0];
-
-  if (!previous?.workoutExercise.id) return null;
-
-  const sets = await db.workoutSets
-    .where("workoutExerciseId")
-    .equals(previous.workoutExercise.id)
-    .sortBy("setNumber");
+  const lastAtCurrentGym = currentWorkout.gymId === undefined
+    ? undefined
+    : candidates.find((candidate) => candidate.workout.gymId === currentWorkout.gymId);
+  const latestCandidate = candidates[0];
+  const latestAnywhere = latestCandidate?.workout.id === lastAtCurrentGym?.workout.id
+    ? undefined
+    : latestCandidate;
+  const selected = [lastAtCurrentGym, latestAnywhere].filter(
+    (candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate)
+  );
+  const gymIds = [...new Set(selected.map((candidate) => candidate.workout.gymId)
+    .filter((id): id is number => id !== undefined))];
+  const gyms = await db.gyms.bulkGet(gymIds);
+  const gymNames = new Map(gymIds.map((id, index) => [id, gyms[index]?.name ?? "Unknown gym"]));
+  const toPerformance = (candidate: typeof candidates[number] | undefined) => candidate ? {
+    workout: candidate.workout,
+    workoutExercise: candidate.workoutExercise,
+    sets: candidate.sets,
+    gymName: candidate.workout.gymId === undefined
+      ? undefined
+      : gymNames.get(candidate.workout.gymId) ?? "Unknown gym"
+  } : undefined;
 
   return {
-    workout: previous.workout,
-    workoutExercise: previous.workoutExercise,
-    sets
+    lastAtCurrentGym: toPerformance(lastAtCurrentGym),
+    latestAnywhere: toPerformance(latestAnywhere)
   };
 }
 
