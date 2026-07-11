@@ -7,6 +7,7 @@ import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/b
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
+import { TemplateEditor } from "./components/TemplateEditor";
 import {
   deleteExercises,
   getOrCreateExercise,
@@ -81,7 +82,9 @@ function fromDateTimeLocalValue(value: string) {
 function App() {
   const today = todayString();
 
-  const [page, setPage] = useState<"today" | "history" | "settings">("today");
+  const [page, setPage] = useState<
+    "today" | "history" | "templates" | "settings"
+  >("today");
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
   const [exerciseName, setExerciseName] = useState("");
@@ -441,9 +444,41 @@ function App() {
       <h1>Workout Log</h1>
 
       <nav className="tabs">
-        <button className={page === "today" ? "active-tab" : ""} onClick={() => setPage("today")}>Today</button>
-        <button className={page === "history" ? "active-tab" : ""} onClick={() => setPage("history")}>History</button>
-        <button className={page === "settings" ? "active-tab" : ""} onClick={() => setPage("settings")}>Settings</button>
+        <button
+          className={
+            page === "today" ? "active-tab" : ""
+          }
+          onClick={() => setPage("today")}
+        >
+          Today
+        </button>
+
+        <button
+          className={
+            page === "history" ? "active-tab" : ""
+          }
+          onClick={() => setPage("history")}
+        >
+          History
+        </button>
+
+        <button
+          className={
+            page === "templates" ? "active-tab" : ""
+          }
+          onClick={() => setPage("templates")}
+        >
+          Templates
+        </button>
+
+        <button
+          className={
+            page === "settings" ? "active-tab" : ""
+          }
+          onClick={() => setPage("settings")}
+        >
+          Settings
+        </button>
       </nav>
 
       {page === "today" && (
@@ -703,6 +738,12 @@ function App() {
           )}
         </section>
 
+      )}
+
+      {page === "templates" && (
+        <TemplateEditor
+          exercises={exercises ?? []}
+        />
       )}
 
       {page === "settings" && (
