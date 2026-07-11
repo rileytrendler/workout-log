@@ -1,6 +1,7 @@
 import Dexie, { type Table } from "dexie";
 import type {
   Exercise,
+  ExerciseGymProfile,
   Gym,
   Workout,
   WorkoutExercise,
@@ -12,6 +13,7 @@ import type {
 class WorkoutLogDatabase extends Dexie {
   gyms!: Table<Gym, number>;
   exercises!: Table<Exercise, number>;
+  exerciseGymProfiles!: Table<ExerciseGymProfile, number>;
   workouts!: Table<Workout, number>;
   workoutExercises!: Table<WorkoutExercise, number>;
   workoutSets!: Table<WorkoutSet, number>;
@@ -65,6 +67,17 @@ class WorkoutLogDatabase extends Dexie {
         workoutTemplates: "++id, name, createdAt, updatedAt",
         workoutTemplateExercises: "++id, templateId, exerciseId, order"
       });
+
+    this.version(5).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+      workouts: "++id, date, gymId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+      workoutTemplates: "++id, name, createdAt, updatedAt",
+      workoutTemplateExercises: "++id, templateId, exerciseId, order"
+    });
 
   }
 }

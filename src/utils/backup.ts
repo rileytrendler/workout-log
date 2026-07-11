@@ -7,6 +7,7 @@ export type WorkoutLogBackup = {
   data: {
     gyms: unknown[];
     exercises: unknown[];
+    exerciseGymProfiles?: unknown[];
     workouts: unknown[];
     workoutExercises: unknown[];
     workoutSets: unknown[];
@@ -23,6 +24,7 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
     data: {
       gyms: await db.gyms.toArray(),
       exercises: await db.exercises.toArray(),
+      exerciseGymProfiles: await db.exerciseGymProfiles.toArray(),
       workouts: await db.workouts.toArray(),
       workoutExercises: await db.workoutExercises.toArray(),
       workoutSets: await db.workoutSets.toArray(),
@@ -65,6 +67,7 @@ export async function importJsonBackup(file: File) {
     [
       db.gyms,
       db.exercises,
+      db.exerciseGymProfiles,
       db.workouts,
       db.workoutExercises,
       db.workoutSets,
@@ -77,11 +80,15 @@ export async function importJsonBackup(file: File) {
       await db.workoutSets.clear();
       await db.workoutExercises.clear();
       await db.workouts.clear();
+      await db.exerciseGymProfiles.clear();
       await db.exercises.clear();
       await db.gyms.clear();
 
       await db.gyms.bulkAdd((parsed.data.gyms ?? []) as never[]);
       await db.exercises.bulkAdd(parsed.data.exercises as never[]);
+      await db.exerciseGymProfiles.bulkAdd(
+        (parsed.data.exerciseGymProfiles ?? []) as never[]
+      );
 
       await db.workoutTemplates.bulkAdd(
         (parsed.data.workoutTemplates ?? []) as never[]

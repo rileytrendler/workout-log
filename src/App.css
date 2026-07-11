@@ -138,6 +138,10 @@ textarea { min-height: 58px; resize: vertical; }
 .exercise-library-details { margin: 8px 0; padding: 8px; border-radius: 7px; background-color: var(--surface-muted); }
 .exercise-library-details p { margin: 3px 0; white-space: pre-wrap; }
 .exercise-details-editor { margin: 8px 0; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.gym-setup-panel { margin: 8px 0; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--accent-soft); }
+.gym-setup-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.gym-setup-summary p { margin-bottom: 0; white-space: pre-wrap; }
+.gym-setup-editor > strong { display: block; margin-bottom: 4px; }
 .add-exercise-card, .add-template-exercise-card { margin-top: 10px; }
 
 .set-entry-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }

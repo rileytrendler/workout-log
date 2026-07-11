@@ -103,3 +103,14 @@ export type WorkoutTemplateExercise = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type ExerciseGymProfile = {
+  id?: number;
+  exerciseId: number;
+  gymId: number;
+  equipmentName?: string;
+  setupNotes?: string;
+  calibrationNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+};

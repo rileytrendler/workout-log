@@ -7,6 +7,7 @@ import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/b
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
+import { ExerciseGymProfilePanel } from "./components/ExerciseGymProfilePanel";
 import { TemplateEditor } from "./components/TemplateEditor";
 import {
   deleteExercises,
@@ -714,6 +715,12 @@ function App() {
                         exerciseId={
                           workoutExercise.exerciseId
                         }
+                      />
+
+                      <ExerciseGymProfilePanel
+                        exerciseId={workoutExercise.exerciseId}
+                        gymId={workout?.gymId}
+                        gymName={gymName(gyms, workout?.gymId)}
                       />
 
                       {renderPrescriptionSummary(workoutExercise)}

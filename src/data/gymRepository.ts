@@ -34,9 +34,12 @@ export async function getGymWorkoutCount(gymId: number): Promise<number> {
 }
 
 export async function deleteGym(gymId: number): Promise<void> {
-  const count = await getGymWorkoutCount(gymId);
-  if (count) throw new Error(`This gym is used by ${count} workout${count === 1 ? "" : "s"} and cannot be deleted.`);
-  await db.gyms.delete(gymId);
+  await db.transaction("rw", db.gyms, db.workouts, db.exerciseGymProfiles, async () => {
+    const count = await getGymWorkoutCount(gymId);
+    if (count) throw new Error(`This gym is used by ${count} workout${count === 1 ? "" : "s"} and cannot be deleted.`);
+    await db.exerciseGymProfiles.where("gymId").equals(gymId).delete();
+    await db.gyms.delete(gymId);
+  });
   if (getStoredLastGymId() === gymId) localStorage.removeItem(LAST_GYM_KEY);
 }
 

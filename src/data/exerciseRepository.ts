@@ -48,7 +48,10 @@ export async function getUnusedExercises(): Promise<Exercise[]> {
 export async function deleteExercises(exerciseIds: number[]): Promise<void> {
   if (!exerciseIds.length) return;
 
-  await db.exercises.bulkDelete(exerciseIds);
+  await db.transaction("rw", db.exercises, db.exerciseGymProfiles, async () => {
+    await db.exerciseGymProfiles.where("exerciseId").anyOf(exerciseIds).delete();
+    await db.exercises.bulkDelete(exerciseIds);
+  });
 }
 
 export type ExerciseDetailChanges = {
