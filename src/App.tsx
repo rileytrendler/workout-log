@@ -6,6 +6,18 @@ import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
+import {
+  deleteExercises,
+  getOrCreateExercise,
+  getUnusedExercises
+} from "./data/exerciseRepository";
+import {
+  addExerciseToWorkout,
+  getOrCreateWorkoutForDate,
+  removeExerciseFromWorkout,
+  updateWorkoutExerciseNotes,
+  updateWorkoutText
+} from "./data/workoutRepository";
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
@@ -149,18 +161,7 @@ function App() {
   );
 
   async function removeUnusedExercises() {
-    const allExercises = await db.exercises.toArray();
-    const allWorkoutExercises = await db.workoutExercises.toArray();
-
-    const usedExerciseIds = new Set(
-      allWorkoutExercises
-        .map((workoutExercise) => workoutExercise.exerciseId)
-        .filter((id): id is number => id !== undefined)
-    );
-
-    const unusedExercises = allExercises.filter((exercise) => {
-      return exercise.id !== undefined && !usedExerciseIds.has(exercise.id);
-    });
+    const unusedExercises = await getUnusedExercises();
 
     if (!unusedExercises.length) {
       alert("No unused exercises found.");
@@ -181,9 +182,11 @@ function App() {
       .map((exercise) => exercise.id)
       .filter((id): id is number => id !== undefined);
 
-    await db.exercises.bulkDelete(unusedExerciseIds);
+    await deleteExercises(unusedExerciseIds);
 
-    alert(`Removed ${unusedExercises.length} unused exercise(s).`);
+    alert(
+      `Removed ${unusedExerciseIds.length} unused exercise(s).`
+    );
   }
 
   async function handleImportBackup(event: React.ChangeEvent<HTMLInputElement>) {
@@ -238,50 +241,33 @@ function App() {
   }
 
   async function startTodayWorkout() {
-    const existingWorkout = await db.workouts.where("date").equals(today).first();
-
-    if (existingWorkout) return;
-
-    const now = nowString();
-
-    await db.workouts.add({
-      date: today,
-      title: "Today's Workout",
-      startTime: now,
-      createdAt: now,
-      updatedAt: now
-    });
+    await getOrCreateWorkoutForDate(today);
   }
 
   async function updateWorkoutTitle(title: string) {
     if (!workout?.id) return;
 
-    await db.workouts.update(workout.id, {
-      title,
-      updatedAt: nowString()
+    await updateWorkoutText(workout.id, {
+      title
     });
   }
 
   async function updateWorkoutNotes(notes: string) {
     if (!workout?.id) return;
 
-    await db.workouts.update(workout.id, {
-      notes,
-      updatedAt: nowString()
+    await updateWorkoutText(workout.id, {
+      notes
     });
   }
 
-  async function updateWorkoutExerciseNotes(workoutExerciseId: number, notes: string) {
-    await db.workoutExercises.update(workoutExerciseId, {
-      notes,
-      updatedAt: nowString()
-    });
-
-    if (workout?.id) {
-      await db.workouts.update(workout.id, {
-        updatedAt: nowString()
-      });
-    }
+  async function handleWorkoutExerciseNotesChange(
+    workoutExerciseId: number,
+    notes: string
+  ) {
+    await updateWorkoutExerciseNotes(
+      workoutExerciseId,
+      notes
+    );
   }
 
   async function addExercise(event: React.FormEvent) {
@@ -291,62 +277,27 @@ function App() {
 
     if (!trimmedName) return;
 
-    let exerciseId: number;
+    try {
+      const exerciseId = await getOrCreateExercise(trimmedName);
+      const currentWorkout = await getOrCreateWorkoutForDate(today);
 
-    const existingExercise = await db.exercises
-      .where("name")
-      .equalsIgnoreCase(trimmedName)
-      .first();
+      if (!currentWorkout.id) {
+        throw new Error("Workout ID is missing.");
+      }
 
-    if (existingExercise?.id) {
-      exerciseId = existingExercise.id;
-    } else {
-      exerciseId = await db.exercises.add({
-        name: trimmedName,
-        defaultUnit: "lb",
-        createdAt: nowString()
-      });
+      await addExerciseToWorkout(
+        currentWorkout.id,
+        exerciseId
+      );
+
+      setExerciseName("");
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Exercise could not be added."
+      );
     }
-
-    let currentWorkout = workout;
-
-    if (!currentWorkout?.id) {
-      const now = nowString();
-
-      const workoutId = await db.workouts.add({
-        date: today,
-        title: "Today's Workout",
-        startTime: now,
-        createdAt: now,
-        updatedAt: now
-      });
-
-      currentWorkout = await db.workouts.get(workoutId);
-    }
-
-    if (!currentWorkout?.id) return;
-
-    const currentCount = await db.workoutExercises
-      .where("workoutId")
-      .equals(currentWorkout.id)
-      .count();
-
-    const now = nowString();
-
-    await db.workoutExercises.add({
-      workoutId: currentWorkout.id,
-      exerciseId,
-      order: currentCount + 1,
-      startedAt: now,
-      createdAt: now,
-      updatedAt: now
-    });
-
-    await db.workouts.update(currentWorkout.id, {
-      updatedAt: now
-    });
-
-    setExerciseName("");
   }
 
   async function editSet(set: WorkoutSet) {
@@ -447,21 +398,16 @@ function App() {
     }
   }
 
-  async function deleteWorkoutExercise(workoutExerciseId: number) {
-    const confirmed = confirm("Remove this exercise and all of its sets from this workout?");
+  async function deleteWorkoutExercise(
+    workoutExerciseId: number
+  ) {
+    const confirmed = confirm(
+      "Remove this exercise and all of its sets from this workout?"
+    );
 
     if (!confirmed) return;
 
-    const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
-
-    await db.transaction("rw", db.workoutExercises, db.workoutSets, async () => {
-      await db.workoutSets.where("workoutExerciseId").equals(workoutExerciseId).delete();
-      await db.workoutExercises.delete(workoutExerciseId);
-    });
-
-    if (workoutExercise?.workoutId) {
-      await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
-    }
+    await removeExerciseFromWorkout(workoutExerciseId);
   }
 
 
@@ -577,7 +523,7 @@ function App() {
                           Exercise Notes
                           <textarea
                             value={workoutExercise.notes ?? ""}
-                            onChange={(event) => updateWorkoutExerciseNotes(workoutExerciseId, event.target.value)}
+                            onChange={(event) => handleWorkoutExerciseNotesChange(workoutExerciseId, event.target.value)}
                             placeholder="Machine settings, seat height, grip, form cues..."
                           />
                         </label>

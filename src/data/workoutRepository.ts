@@ -235,3 +235,140 @@ export async function recalculateWorkoutLastSetAt(
     updatedAt: nowString()
   });
 }
+
+export async function getOrCreateWorkoutForDate(
+  date: string,
+  defaultTitle = "Today's Workout"
+): Promise<Workout> {
+  const existingWorkout = await db.workouts
+    .where("date")
+    .equals(date)
+    .first();
+
+  if (existingWorkout) {
+    return existingWorkout;
+  }
+
+  const now = nowString();
+
+  const workoutId = await db.workouts.add({
+    date,
+    title: defaultTitle,
+    startTime: now,
+    createdAt: now,
+    updatedAt: now
+  });
+
+  const workout = await db.workouts.get(workoutId);
+
+  if (!workout) {
+    throw new Error("Workout could not be created.");
+  }
+
+  return workout;
+}
+
+export async function addExerciseToWorkout(
+  workoutId: number,
+  exerciseId: number
+): Promise<number> {
+  const existingRows = await db.workoutExercises
+    .where("workoutId")
+    .equals(workoutId)
+    .toArray();
+
+  const alreadyAdded = existingRows.some(
+    (workoutExercise) => workoutExercise.exerciseId === exerciseId
+  );
+
+  if (alreadyAdded) {
+    throw new Error("That exercise is already in this workout.");
+  }
+
+  const now = nowString();
+
+  const workoutExerciseId = await db.workoutExercises.add({
+    workoutId,
+    exerciseId,
+    order: existingRows.length + 1,
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now
+  });
+
+  await db.workouts.update(workoutId, {
+    updatedAt: now
+  });
+
+  return workoutExerciseId;
+}
+
+export async function updateWorkoutText(
+  workoutId: number,
+  changes: {
+    title?: string;
+    notes?: string;
+  }
+): Promise<void> {
+  await db.workouts.update(workoutId, {
+    ...changes,
+    updatedAt: nowString()
+  });
+}
+
+export async function updateWorkoutExerciseNotes(
+  workoutExerciseId: number,
+  notes: string
+): Promise<void> {
+  const workoutExercise = await db.workoutExercises.get(
+    workoutExerciseId
+  );
+
+  if (!workoutExercise) {
+    throw new Error("Workout exercise could not be found.");
+  }
+
+  const now = nowString();
+
+  await db.transaction(
+    "rw",
+    db.workoutExercises,
+    db.workouts,
+    async () => {
+      await db.workoutExercises.update(workoutExerciseId, {
+        notes,
+        updatedAt: now
+      });
+
+      await db.workouts.update(workoutExercise.workoutId, {
+        updatedAt: now
+      });
+    }
+  );
+}
+
+export async function removeExerciseFromWorkout(
+  workoutExerciseId: number
+): Promise<void> {
+  const workoutExercise = await db.workoutExercises.get(
+    workoutExerciseId
+  );
+
+  if (!workoutExercise) return;
+
+  await db.transaction(
+    "rw",
+    db.workoutExercises,
+    db.workoutSets,
+    async () => {
+      await db.workoutSets
+        .where("workoutExerciseId")
+        .equals(workoutExerciseId)
+        .delete();
+
+      await db.workoutExercises.delete(workoutExerciseId);
+    }
+  );
+
+  await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
+}
