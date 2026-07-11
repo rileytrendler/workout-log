@@ -38,6 +38,13 @@ export type Workout = {
   lastSetAt?: string;
   createdAt: string;
   updatedAt: string;
+  programId?: number;
+  programWeekId?: number;
+  programWorkoutId?: number;
+  programNameSnapshot?: string;
+  programWeekLabelSnapshot?: string;
+  programWorkoutNameSnapshot?: string;
+  programProgressAppliedAt?: string;
 };
 
 export type WorkoutExercise = {
@@ -162,5 +169,14 @@ export type ProgramWorkoutExerciseOverride = {
   warmupInstructions?: string;
   prescriptionNotes?: string;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type ActiveProgramState = {
+  id?: number;
+  programId: number;
+  currentProgramWeekId: number;
+  currentProgramWorkoutId: number;
+  activatedAt: string;
   updatedAt: string;
 };

@@ -126,6 +126,12 @@ textarea { min-height: 58px; resize: vertical; }
 .active-workout-heading h2 { margin: 0; }
 .active-badge { padding: 2px 7px; border-radius: 999px; color: var(--accent-strong); background: var(--accent-soft); font-size: .72rem; font-weight: 800; }
 .empty-active-state { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 0 2px; }
+.planned-workout-card { border-color: var(--accent); background: linear-gradient(135deg, var(--surface), var(--accent-soft)); }
+.planned-workout-card h2 { margin-top: 6px; }
+.planned-workout-card .button-row { margin-top: 10px; }
+.program-source, .pending-program-note { padding: 7px 9px; border-radius: 7px; background: var(--accent-soft); }
+.program-progress-card h3 { margin-top: 5px; }
+.program-activation-row { margin-bottom: 8px; }
 .muted { color: var(--muted-text); font-size: .82rem; }
 .note-block { padding: 8px; border-radius: 7px; color: var(--text); background-color: var(--surface-muted); white-space: pre-wrap; }
 

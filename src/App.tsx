@@ -32,6 +32,7 @@ import {
   updateWorkoutText
 } from "./data/workoutRepository";
 import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
+import { getActiveProgramState, getPlannedProgramWorkout, skipPlannedWorkout, startPlannedProgramWorkout } from "./data/programRepository";
 
 function todayString() {
   const now = new Date();
@@ -93,6 +94,10 @@ function fromDateTimeLocalValue(value: string) {
   return new Date(value).toISOString();
 }
 
+function programSource(workout?: Workout) {
+  return [workout?.programNameSnapshot, workout?.programWeekLabelSnapshot, workout?.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
+}
+
 function App() {
   const today = todayString();
 
@@ -109,6 +114,8 @@ function App() {
   const gyms = useLiveQuery<Gym[]>(() => db.gyms.orderBy("name").toArray(), []);
 
   const workout = useLiveQuery(() => getActiveWorkout(), []);
+  const activeProgramState = useLiveQuery(() => getActiveProgramState(), []);
+  const plannedProgramWorkout = useLiveQuery(() => getPlannedProgramWorkout(), []);
 
   const workouts = useLiveQuery(
     async () => (await db.workouts.toArray()).sort((a, b) =>
@@ -301,6 +308,17 @@ function App() {
     } catch (error) {
       alert(error instanceof Error ? error.message : "Workout could not be started.");
     }
+  }
+
+  async function startPlannedWorkout() {
+    try { await startPlannedProgramWorkout(today, await getValidLastGymId()); }
+    catch (error) { alert(error instanceof Error ? error.message : "Planned workout could not be started."); }
+  }
+
+  async function skipPlanned() {
+    if (!confirm("Skip this planned workout? No Workout or History entry will be created.")) return;
+    try { const result = await skipPlannedWorkout(); if (result === "completed") alert("Program complete."); else if (result === "mismatch") alert("Program progress could not be advanced because its definition changed."); }
+    catch (error) { alert(error instanceof Error ? error.message : "Planned workout could not be skipped."); }
   }
 
   async function startOrAddFromTemplate(templateId: number, templateName: string) {
@@ -589,12 +607,14 @@ function App() {
   async function handleFinishWorkout() {
     if (!workout?.id) return;
     const hasCompletedSets = workoutSets?.some((set) => set.performedAt || set.createdAt) ?? false;
-    const message = hasCompletedSets
-      ? "Finish this workout? It will move to History."
-      : "Finish this workout with no completed sets? It will move to History.";
+    const message = workout.programId
+      ? "Finish this workout and advance to the next planned Program workout?"
+      : hasCompletedSets ? "Finish this workout? It will move to History." : "Finish this workout with no completed sets? It will move to History.";
     if (!confirm(message)) return;
     try {
-      await finishWorkout(workout.id);
+      const result = await finishWorkout(workout.id);
+      if (result.programProgress === "mismatch") alert("Workout finished, but Program progress was not advanced because the active Program no longer matched this workout.");
+      else if (result.programProgress === "completed") alert("Workout finished. Program complete.");
       restTimer.dismiss();
     } catch (error) {
       alert(error instanceof Error ? error.message : "Workout could not be finished.");
@@ -684,6 +704,16 @@ function App() {
               onDismiss={restTimer.dismiss}
             />
           )}
+          {!workout && activeProgramState && (plannedProgramWorkout ? (
+            <section className="card planned-workout-card">
+              <span className="active-badge">Planned Workout</span>
+              <h2>{plannedProgramWorkout.program.name}</h2>
+              <p><strong>{plannedProgramWorkout.week.name || `Week ${plannedProgramWorkout.week.order}`} · {plannedProgramWorkout.workout.displayName || plannedProgramWorkout.template.name}</strong></p>
+              <p className="muted">Template: {plannedProgramWorkout.template.name} · Workout {plannedProgramWorkout.workoutIndex} of {plannedProgramWorkout.workoutCount}</p>
+              {plannedProgramWorkout.workout.notes && <p className="note-block">{plannedProgramWorkout.workout.notes}</p>}
+              <div className="button-row"><button onClick={startPlannedWorkout}>Start Planned Workout</button><button className="secondary-button" onClick={() => setPage("programs")}>View Program</button><button className="secondary-button danger" onClick={skipPlanned}>Skip Planned Workout</button></div>
+            </section>
+          ) : <section className="card planned-workout-card"><h2>Active Program needs attention</h2><p className="muted">Its current week, workout slot, or template is missing.</p><button className="secondary-button" onClick={() => setPage("programs")}>View Program</button></section>)}
           <section className="card">
             <div className="active-workout-heading">
               <div><h2>Active Workout</h2>{workout && <span className="active-badge">Active</span>}</div>
@@ -692,6 +722,8 @@ function App() {
 
             {workout ? (
               <>
+                {programSource(workout) && <p className="program-source"><strong>Program:</strong> {programSource(workout)}</p>}
+                {!workout.programId && activeProgramState && <p className="muted pending-program-note">A Program workout is still pending and will not advance when this unrelated workout is finished.</p>}
                 <label className="field-label">
                   Workout Name
                   <input
@@ -906,6 +938,7 @@ function App() {
                     >
                       <strong>{historyWorkout.title || "Untitled Workout"}</strong>
                       <span>{historyWorkout.date}</span>
+                      {programSource(historyWorkout) && <span>{programSource(historyWorkout)}</span>}
                       {historyWorkout.gymId !== undefined && <span>{gymName(gyms, historyWorkout.gymId)}</span>}
                       <span>{formatDuration(historyWorkout.startTime ?? historyWorkout.createdAt, effectiveEndTime)}</span>
                     </button>
@@ -937,6 +970,7 @@ function App() {
                     <p>Duration: {formatDuration(selectedWorkout.startTime ?? selectedWorkout.createdAt, getWorkoutEffectiveEndTime(selectedWorkout))}</p>
                     <p>Status: {selectedWorkout.status === "active" ? "Active" : "Completed"}</p>
                     {selectedWorkout.completedAt && <p>Completed: {formatDateTime(selectedWorkout.completedAt)}</p>}
+                    {programSource(selectedWorkout) && <p><strong>Program source:</strong> {programSource(selectedWorkout)}</p>}
                     {selectedWorkout.gymId !== undefined && <p>Gym: {gymName(gyms, selectedWorkout.gymId)}</p>}
 
                     <label className="field-label compact-gym-field">
@@ -1021,7 +1055,7 @@ function App() {
       )}
 
       {page === "programs" && (
-        <ProgramEditor exercises={exercises ?? []} />
+        <ProgramEditor exercises={exercises ?? []} onViewActive={() => setPage("active")} />
       )}
 
       {page === "settings" && (

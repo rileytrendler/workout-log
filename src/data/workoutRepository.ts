@@ -6,6 +6,7 @@ import type {
   WorkoutSet,
   WorkoutTemplateExercise
 } from "../db/types";
+import { advanceActiveProgram } from "./programRepository";
 
 export type ApplyWorkoutTemplateResult = {
   workout: Workout;
@@ -526,13 +527,20 @@ export async function startBlankWorkout(
   });
 }
 
-export async function finishWorkout(workoutId: number): Promise<Workout> {
-  return db.transaction("rw", db.workouts, async () => {
+export type FinishWorkoutResult = { workout: Workout; programProgress: "advanced" | "completed" | "mismatch" | "not_applicable" };
+
+export async function finishWorkout(workoutId: number): Promise<FinishWorkoutResult> {
+  return db.transaction("rw", db.workouts, db.activeProgramStates, db.programs, db.programWeeks, db.programWorkouts, async () => {
     const workout = await db.workouts.get(workoutId);
     if (!workout || workout.status !== "active") throw new Error("This workout is no longer active.");
     const now = nowString();
-    await db.workouts.update(workoutId, { status: "completed", completedAt: now, updatedAt: now });
-    return { ...workout, status: "completed", completedAt: now, updatedAt: now };
+    let programProgress: FinishWorkoutResult["programProgress"] = "not_applicable";
+    if (workout.programId && workout.programWeekId && workout.programWorkoutId && !workout.programProgressAppliedAt) {
+      programProgress = await advanceActiveProgram({ programId: workout.programId, weekId: workout.programWeekId, workoutId: workout.programWorkoutId });
+    }
+    const programProgressAppliedAt = programProgress === "advanced" || programProgress === "completed" ? now : workout.programProgressAppliedAt;
+    await db.workouts.update(workoutId, { status: "completed", completedAt: now, updatedAt: now, programProgressAppliedAt });
+    return { workout: { ...workout, status: "completed", completedAt: now, updatedAt: now, programProgressAppliedAt }, programProgress };
   });
 }
 

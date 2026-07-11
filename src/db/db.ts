@@ -11,7 +11,8 @@ import type {
   Program,
   ProgramWeek,
   ProgramWorkout,
-  ProgramWorkoutExerciseOverride
+  ProgramWorkoutExerciseOverride,
+  ActiveProgramState
 } from "./types";
 
 class WorkoutLogDatabase extends Dexie {
@@ -27,6 +28,7 @@ class WorkoutLogDatabase extends Dexie {
   programWeeks!: Table<ProgramWeek, number>;
   programWorkouts!: Table<ProgramWorkout, number>;
   programWorkoutExerciseOverrides!: Table<ProgramWorkoutExerciseOverride, number>;
+  activeProgramStates!: Table<ActiveProgramState, number>;
 
   constructor() {
     super("WorkoutLogDatabase");
@@ -120,6 +122,22 @@ class WorkoutLogDatabase extends Dexie {
       .upgrade((transaction) => transaction.table("workouts").toCollection().modify((workout) => {
         if (!workout.status) workout.status = "completed";
       }));
+
+    this.version(8).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+      workouts: "++id, date, status, gymId, programId, programWorkoutId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+      workoutTemplates: "++id, name, createdAt, updatedAt",
+      workoutTemplateExercises: "++id, templateId, exerciseId, order",
+      programs: "++id, name, createdAt, updatedAt",
+      programWeeks: "++id, programId, order, [programId+order]",
+      programWorkouts: "++id, programWeekId, templateId, order, [programWeekId+order]",
+      programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]",
+      activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
+    });
 
   }
 }

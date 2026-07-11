@@ -17,6 +17,7 @@ export type WorkoutLogBackup = {
     programWeeks?: unknown[];
     programWorkouts?: unknown[];
     programWorkoutExerciseOverrides?: unknown[];
+    activeProgramStates?: unknown[];
   };
 };
 
@@ -38,7 +39,8 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
       programs: await db.programs.toArray(),
       programWeeks: await db.programWeeks.toArray(),
       programWorkouts: await db.programWorkouts.toArray(),
-      programWorkoutExerciseOverrides: await db.programWorkoutExerciseOverrides.toArray()
+      programWorkoutExerciseOverrides: await db.programWorkoutExerciseOverrides.toArray(),
+      activeProgramStates: await db.activeProgramStates.toArray()
     }
   };
 }
@@ -73,6 +75,16 @@ export async function importJsonBackup(file: File) {
   if (importedWorkouts.filter((workout) => workout.status === "active").length > 1) {
     throw new Error("This backup contains more than one active workout and cannot be imported safely.");
   }
+  const importedActiveProgramStates = parsed.data.activeProgramStates ?? [];
+  if (importedActiveProgramStates.length > 1) throw new Error("This backup contains more than one active Program and cannot be imported safely.");
+  if (importedActiveProgramStates.length) {
+    const state = importedActiveProgramStates[0] as Record<string, unknown>;
+    const programs = parsed.data.programs ?? [], weeks = parsed.data.programWeeks ?? [], slots = parsed.data.programWorkouts ?? [];
+    const program = programs.find(row => (row as Record<string, unknown>).id === state.programId) as Record<string, unknown> | undefined;
+    const week = weeks.find(row => (row as Record<string, unknown>).id === state.currentProgramWeekId) as Record<string, unknown> | undefined;
+    const slot = slots.find(row => (row as Record<string, unknown>).id === state.currentProgramWorkoutId) as Record<string, unknown> | undefined;
+    if (!program || !week || !slot || week.programId !== state.programId || slot.programWeekId !== state.currentProgramWeekId) throw new Error("The active Program progress in this backup has invalid references.");
+  }
 
   const confirmed = confirm("Importing this backup will replace all current local workout data. Continue?");
 
@@ -92,10 +104,12 @@ export async function importJsonBackup(file: File) {
       db.programs,
       db.programWeeks,
       db.programWorkouts,
-      db.programWorkoutExerciseOverrides
+      db.programWorkoutExerciseOverrides,
+      db.activeProgramStates
     ],
     async () => {
       await db.programWorkoutExerciseOverrides.clear();
+      await db.activeProgramStates.clear();
       await db.programWorkouts.clear();
       await db.programWeeks.clear();
       await db.programs.clear();
@@ -126,6 +140,7 @@ export async function importJsonBackup(file: File) {
       await db.programWeeks.bulkAdd((parsed.data.programWeeks ?? []) as never[]);
       await db.programWorkouts.bulkAdd((parsed.data.programWorkouts ?? []) as never[]);
       await db.programWorkoutExerciseOverrides.bulkAdd((parsed.data.programWorkoutExerciseOverrides ?? []) as never[]);
+      await db.activeProgramStates.bulkAdd(importedActiveProgramStates as never[]);
 
       await db.workouts.bulkAdd(importedWorkouts as never[]);
 
@@ -190,6 +205,9 @@ export async function downloadSetsCsv() {
       "workoutLastSetAt",
       "workoutStatus",
       "workoutCompletedAt",
+      "programName",
+      "programWeek",
+      "programWorkout",
       "exerciseName",
       "exerciseNotes",
       "setNumber",
@@ -240,6 +258,9 @@ export async function downloadSetsCsv() {
       workout?.lastSetAt,
       workout?.status ?? "completed",
       workout?.completedAt,
+      workout?.programNameSnapshot,
+      workout?.programWeekLabelSnapshot,
+      workout?.programWorkoutNameSnapshot,
       exercise?.name,
       workoutExercise?.notes,
       set.setNumber,
