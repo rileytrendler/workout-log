@@ -9,6 +9,7 @@ import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./components/ExerciseGymProfilePanel";
 import { TemplateEditor } from "./components/TemplateEditor";
+import { ProgramEditor } from "./components/ProgramEditor";
 import { RestTimerBar } from "./components/RestTimerBar";
 import { useRestTimer } from "./hooks/useRestTimer";
 import {
@@ -91,7 +92,7 @@ function App() {
   const today = todayString();
 
   const [page, setPage] = useState<
-    "today" | "history" | "templates" | "settings"
+    "today" | "history" | "templates" | "programs" | "settings"
   >("today");
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
@@ -622,6 +623,13 @@ function App() {
         </button>
 
         <button
+          className={page === "programs" ? "active-tab" : ""}
+          onClick={() => setPage("programs")}
+        >
+          Programs
+        </button>
+
+        <button
           className={
             page === "settings" ? "active-tab" : ""
           }
@@ -971,6 +979,10 @@ function App() {
         <TemplateEditor
           exercises={exercises ?? []}
         />
+      )}
+
+      {page === "programs" && (
+        <ProgramEditor exercises={exercises ?? []} />
       )}
 
       {page === "settings" && (

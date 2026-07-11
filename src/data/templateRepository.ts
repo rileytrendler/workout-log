@@ -83,6 +83,8 @@ export async function updateWorkoutTemplate(
 export async function deleteWorkoutTemplate(
   templateId: number
 ): Promise<void> {
+  const usageCount = await db.programWorkouts.where("templateId").equals(templateId).count();
+  if (usageCount) throw new Error(`This template is used by ${usageCount} program workout slot${usageCount === 1 ? "" : "s"}. Remove those slots before deleting it.`);
   await db.transaction(
     "rw",
     db.workoutTemplates,

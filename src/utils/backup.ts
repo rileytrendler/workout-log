@@ -13,6 +13,10 @@ export type WorkoutLogBackup = {
     workoutSets: unknown[];
     workoutTemplates: unknown[];
     workoutTemplateExercises: unknown[];
+    programs?: unknown[];
+    programWeeks?: unknown[];
+    programWorkouts?: unknown[];
+    programWorkoutExerciseOverrides?: unknown[];
   };
 };
 
@@ -30,7 +34,11 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
       workoutSets: await db.workoutSets.toArray(),
       workoutTemplates: await db.workoutTemplates.toArray(),
       workoutTemplateExercises:
-        await db.workoutTemplateExercises.toArray()
+        await db.workoutTemplateExercises.toArray(),
+      programs: await db.programs.toArray(),
+      programWeeks: await db.programWeeks.toArray(),
+      programWorkouts: await db.programWorkouts.toArray(),
+      programWorkoutExerciseOverrides: await db.programWorkoutExerciseOverrides.toArray()
     }
   };
 }
@@ -72,9 +80,17 @@ export async function importJsonBackup(file: File) {
       db.workoutExercises,
       db.workoutSets,
       db.workoutTemplates,
-      db.workoutTemplateExercises
+      db.workoutTemplateExercises,
+      db.programs,
+      db.programWeeks,
+      db.programWorkouts,
+      db.programWorkoutExerciseOverrides
     ],
     async () => {
+      await db.programWorkoutExerciseOverrides.clear();
+      await db.programWorkouts.clear();
+      await db.programWeeks.clear();
+      await db.programs.clear();
       await db.workoutTemplateExercises.clear();
       await db.workoutTemplates.clear();
       await db.workoutSets.clear();
@@ -97,6 +113,11 @@ export async function importJsonBackup(file: File) {
       await db.workoutTemplateExercises.bulkAdd(
         (parsed.data.workoutTemplateExercises ?? []) as never[]
       );
+
+      await db.programs.bulkAdd((parsed.data.programs ?? []) as never[]);
+      await db.programWeeks.bulkAdd((parsed.data.programWeeks ?? []) as never[]);
+      await db.programWorkouts.bulkAdd((parsed.data.programWorkouts ?? []) as never[]);
+      await db.programWorkoutExerciseOverrides.bulkAdd((parsed.data.programWorkoutExerciseOverrides ?? []) as never[]);
 
       await db.workouts.bulkAdd(parsed.data.workouts as never[]);
 

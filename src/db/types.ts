@@ -114,3 +114,51 @@ export type ExerciseGymProfile = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type ProgramEndBehavior = "stop" | "repeat" | "continue_last_week";
+
+export type Program = {
+  id?: number;
+  name: string;
+  notes?: string;
+  endBehavior: ProgramEndBehavior;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProgramWeek = {
+  id?: number;
+  programId: number;
+  order: number;
+  name?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProgramWorkout = {
+  id?: number;
+  programWeekId: number;
+  templateId: number;
+  order: number;
+  displayName?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProgramWorkoutExerciseOverride = {
+  id?: number;
+  programWorkoutId: number;
+  exerciseId: number;
+  plannedSetCount?: number;
+  targetMinReps?: number;
+  targetMaxReps?: number;
+  targetRpeMin?: number;
+  targetRpeMax?: number;
+  targetRestSeconds?: number;
+  warmupInstructions?: string;
+  prescriptionNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+};

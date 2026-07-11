@@ -547,13 +547,14 @@ export function TemplateEditor({
 
     if (!confirmed) return;
 
-    await deleteWorkoutTemplate(
-      selectedTemplateId
-    );
-
-    setSelectedTemplateId(null);
-    setTemplateName("");
-    setTemplateNotes("");
+    try {
+      await deleteWorkoutTemplate(selectedTemplateId);
+      setSelectedTemplateId(null);
+      setTemplateName("");
+      setTemplateNotes("");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Template could not be deleted.");
+    }
   }
 
   async function addExercise(
