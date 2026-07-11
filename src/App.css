@@ -158,6 +158,9 @@ textarea { min-height: 58px; resize: vertical; }
 .set-entry-main > strong { font-size: .78rem; white-space: nowrap; }
 .set-entry-main input { padding: 8px 6px; text-align: center; }
 .previous-inline { grid-column: 2 / -1; color: var(--muted-text); font-size: .76rem; line-height: 1.25; }
+.set-reference-list { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.set-reference-list > div > strong { color: var(--text); }
+.set-reference-list > .compact-comparison { margin-left: 0; }
 .compact-comparison { display: inline-flex; gap: 3px; margin-left: 5px; white-space: nowrap; font-size: .74rem; }
 .comparison-separator { color: #9aa49d; }
 .compare-up { color: var(--accent-strong); font-weight: 750; }

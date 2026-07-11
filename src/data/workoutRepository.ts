@@ -24,6 +24,16 @@ export type PriorExercisePerformance = {
 export type ExerciseComparisonResult = {
   lastAtCurrentGym?: PriorExercisePerformance;
   latestAnywhere?: PriorExercisePerformance;
+  bestBySetNumber: Record<number, PriorSetReference>;
+};
+
+export type PriorSetReference = {
+  set: WorkoutSet;
+  workout: Workout;
+  workoutExercise: WorkoutExercise;
+  gymName?: string;
+  performedAt: string;
+  matchedTargetRepRange: boolean;
 };
 
 export type WorkoutExerciseContext = {
@@ -194,11 +204,14 @@ export async function getExerciseComparisons(
 ): Promise<ExerciseComparisonResult> {
   const currentWorkoutExercise = await db.workoutExercises.get(workoutExerciseId);
 
-  if (!currentWorkoutExercise) return {};
+  if (!currentWorkoutExercise) return { bestBySetNumber: {} };
 
   const currentWorkout = await db.workouts.get(currentWorkoutExercise.workoutId);
 
-  if (!currentWorkout) return {};
+  if (!currentWorkout) return { bestBySetNumber: {} };
+
+  const exercise = await db.exercises.get(currentWorkoutExercise.exerciseId);
+  const measurementType = exercise?.measurementType ?? "weight_reps";
 
   const matchingExerciseRows = await db.workoutExercises
     .where("exerciseId")
@@ -219,7 +232,12 @@ export async function getExerciseComparisons(
   const setsByWorkoutExercise = new Map<number, WorkoutSet[]>();
 
   for (const set of sets) {
-    if (set.isWarmup || set.reps === undefined || !getSetPerformedTime(set)) continue;
+    if (
+      set.isWarmup ||
+      set.reps === undefined ||
+      (measurementType !== "reps_only" && set.weight === undefined) ||
+      !getSetPerformedTime(set)
+    ) continue;
     const existing = setsByWorkoutExercise.get(set.workoutExerciseId) ?? [];
     existing.push(set);
     setsByWorkoutExercise.set(set.workoutExerciseId, existing);
@@ -230,18 +248,18 @@ export async function getExerciseComparisons(
     const usableSets = setsByWorkoutExercise.get(workoutExercise.id);
     if (!workout || !usableSets?.length) return [];
     const sortTime = new Date(workout.startTime ?? workout.createdAt).getTime();
-    if (!Number.isFinite(sortTime) || sortTime >= currentWorkoutTime) return [];
+    const isFutureWorkout = workout.date > currentWorkout.date ||
+      (workout.date === currentWorkout.date &&
+        (!Number.isFinite(sortTime) || sortTime >= currentWorkoutTime));
+    if (isFutureWorkout) return [];
     return [{ workout, workoutExercise, sets: usableSets.sort((a, b) => a.setNumber - b.setNumber), sortTime }];
   }).sort((a, b) => b.sortTime - a.sortTime);
 
   const lastAtCurrentGym = currentWorkout.gymId === undefined
     ? undefined
     : candidates.find((candidate) => candidate.workout.gymId === currentWorkout.gymId);
-  const latestCandidate = candidates[0];
-  const latestAnywhere = latestCandidate?.workout.id === lastAtCurrentGym?.workout.id
-    ? undefined
-    : latestCandidate;
-  const selected = [lastAtCurrentGym, latestAnywhere].filter(
+  const latestAnywhere = candidates[0];
+  const selected = candidates.filter(
     (candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate)
   );
   const gymIds = [...new Set(selected.map((candidate) => candidate.workout.gymId)
@@ -257,9 +275,54 @@ export async function getExerciseComparisons(
       : gymNames.get(candidate.workout.gymId) ?? "Unknown gym"
   } : undefined;
 
+  const hasTargetRepRange =
+    currentWorkoutExercise.targetMinReps !== undefined &&
+    currentWorkoutExercise.targetMaxReps !== undefined;
+  const referencesBySetNumber = new Map<number, Array<PriorSetReference>>();
+
+  for (const candidate of candidates) {
+    for (const set of candidate.sets) {
+      const performedAt = getSetPerformedTime(set);
+      if (!performedAt) continue;
+      const references = referencesBySetNumber.get(set.setNumber) ?? [];
+      references.push({
+        set,
+        workout: candidate.workout,
+        workoutExercise: candidate.workoutExercise,
+        gymName: candidate.workout.gymId === undefined
+          ? undefined
+          : gymNames.get(candidate.workout.gymId) ?? "Unknown gym",
+        performedAt,
+        matchedTargetRepRange: hasTargetRepRange &&
+          set.reps! >= currentWorkoutExercise.targetMinReps! &&
+          set.reps! <= currentWorkoutExercise.targetMaxReps!
+      });
+      referencesBySetNumber.set(set.setNumber, references);
+    }
+  }
+
+  const bestBySetNumber: Record<number, PriorSetReference> = {};
+  for (const [setNumber, allReferences] of referencesBySetNumber) {
+    const inTargetRange = allReferences.filter(
+      (reference) => reference.matchedTargetRepRange
+    );
+    const rankedReferences = inTargetRange.length ? inTargetRange : allReferences;
+    rankedReferences.sort((a, b) => {
+      if (measurementType === "reps_only") {
+        return b.set.reps! - a.set.reps! ||
+          new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime();
+      }
+      return b.set.weight! - a.set.weight! ||
+        b.set.reps! - a.set.reps! ||
+        new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime();
+    });
+    bestBySetNumber[setNumber] = rankedReferences[0];
+  }
+
   return {
     lastAtCurrentGym: toPerformance(lastAtCurrentGym),
-    latestAnywhere: toPerformance(latestAnywhere)
+    latestAnywhere: toPerformance(latestAnywhere),
+    bestBySetNumber
   };
 }
 

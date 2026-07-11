@@ -6,7 +6,8 @@ import {
   getWorkoutExerciseContext,
   saveSetPerformance,
   updateSetNote,
-  type PriorExercisePerformance
+  type PriorExercisePerformance,
+  type PriorSetReference
 } from "../data/workoutRepository";
 import type {
   ExerciseMeasurementType,
@@ -106,7 +107,7 @@ function displayWeight(
 
     return addedWeight === 0
       ? `Bodyweight × ${set.reps ?? "?"}`
-      : `Bodyweight +${addedWeight} × ${set.reps ?? "?"}`;
+      : `Bodyweight + ${addedWeight} × ${set.reps ?? "?"}`;
   }
 
   return `${set.weight ?? "?"}×${set.reps ?? "?"}`;
@@ -154,6 +155,45 @@ export function ExerciseSetRows({
     return primaryPerformance?.sets.find(
       (set) => set.setNumber === setNumber
     );
+  }
+
+  function getReferenceRows(setNumber: number) {
+    const references: Array<{ label: string; reference: PriorSetReference }> = [];
+    const addPerformanceSet = (
+      label: string,
+      performance: PriorExercisePerformance | undefined
+    ) => {
+      const set = performance?.sets.find((candidate) => candidate.setNumber === setNumber);
+      const performedAt = set && getSetPerformedTime(set);
+      if (!set || !performedAt || !performance) return;
+      references.push({
+        label,
+        reference: {
+          set,
+          workout: performance.workout,
+          workoutExercise: performance.workoutExercise,
+          gymName: performance.gymName,
+          performedAt,
+          matchedTargetRepRange: false
+        }
+      });
+    };
+
+    addPerformanceSet("Last here", comparisons?.lastAtCurrentGym);
+    addPerformanceSet("Latest", comparisons?.latestAnywhere);
+    const best = comparisons?.bestBySetNumber[setNumber];
+    if (best) references.push({ label: "Best", reference: best });
+
+    const grouped = new Map<string, { labels: string[]; reference: PriorSetReference }>();
+    for (const item of references) {
+      const setIdentity = item.reference.set.id !== undefined
+        ? `set-${item.reference.set.id}`
+        : `${item.reference.workout.id}-${item.reference.workoutExercise.id}-${item.reference.set.setNumber}`;
+      const existing = grouped.get(setIdentity);
+      if (existing) existing.labels.push(item.label);
+      else grouped.set(setIdentity, { labels: [item.label], reference: item.reference });
+    }
+    return [...grouped.values()];
   }
 
   function getDraft(setNumber: number): SetDraft {
@@ -319,16 +359,7 @@ export function ExerciseSetRows({
 
   return (
     <div className="set-entry-rows">
-      {primaryPerformance ? (
-        <div className="performance-comparisons">
-          {comparisons?.lastAtCurrentGym && (
-            <PerformanceSummary label="Last at this gym" performance={comparisons.lastAtCurrentGym} measurementType={measurementType} />
-          )}
-          {comparisons?.latestAnywhere && (
-            <PerformanceSummary label="Latest anywhere" performance={comparisons.latestAnywhere} measurementType={measurementType} secondary />
-          )}
-        </div>
-      ) : (
+      {!primaryPerformance && !Object.keys(comparisons?.bestBySetNumber ?? {}).length && (
         <p className="previous-context muted">
           Previous: none found
         </p>
@@ -337,6 +368,7 @@ export function ExerciseSetRows({
       {setNumbers.map((setNumber) => {
         const currentSet = getCurrentSet(setNumber);
         const previousSet = getPreviousSet(setNumber);
+        const referenceRows = getReferenceRows(setNumber);
         const draft = getDraft(setNumber);
 
         return (
@@ -400,23 +432,18 @@ export function ExerciseSetRows({
               />
 
               <div className="previous-inline">
-                {previousSet ? (
-                  <>
-                    Prev{" "}
-                    {displayWeight(
-                      previousSet,
-                      measurementType
-                    )}
-
-                    {previousSet.actualRpe !==
-                      undefined && (
-                      <>
-                        {" "}
-                        @ {previousSet.actualRpe}
-                      </>
-                    )}
+                {referenceRows.length ? (
+                  <div className="set-reference-list">
+                    {referenceRows.map(({ labels, reference }) => (
+                      <div key={reference.set.id ?? `${reference.workout.id}-${setNumber}`}>
+                        <strong>{labels.join(" / ")}:</strong>{" "}
+                        {displayWeight(reference.set, measurementType)}
+                        {reference.set.actualRpe !== undefined && ` @ ${reference.set.actualRpe}`}
+                      </div>
+                    ))}
 
                     {currentSet &&
+                      previousSet &&
                       measurementType !==
                         "reps_only" && (
                         <span className="compact-comparison">
@@ -437,6 +464,7 @@ export function ExerciseSetRows({
                       )}
 
                     {currentSet &&
+                      previousSet &&
                       measurementType ===
                         "reps_only" && (
                         <span className="compact-comparison">
@@ -447,7 +475,7 @@ export function ExerciseSetRows({
                           )}
                         </span>
                       )}
-                  </>
+                  </div>
                 ) : (
                   <span className="muted">
                     No previous set
@@ -554,29 +582,6 @@ export function ExerciseSetRows({
       >
         + Add Set
       </button>
-    </div>
-  );
-}
-
-function PerformanceSummary({ label, performance, measurementType, secondary = false }: {
-  label: string;
-  performance: PriorExercisePerformance;
-  measurementType: ExerciseMeasurementType;
-  secondary?: boolean;
-}) {
-  return (
-    <div className={`performance-summary${secondary ? " secondary" : ""}`}>
-      <strong>{label}</strong>
-      <span>{performance.workout.date}{performance.gymName ? ` · ${performance.gymName}` : ""}</span>
-      <div className="performance-set-list">
-        {performance.sets.map((set) => (
-          <span key={set.id ?? set.setNumber}>
-            Set {set.setNumber}: {displayWeight(set, measurementType)}
-            {set.actualRpe !== undefined ? ` @ ${set.actualRpe}` : ""}
-            {set.notes ? ` · ${set.notes}` : ""}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
