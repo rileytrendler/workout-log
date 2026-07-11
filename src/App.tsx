@@ -585,7 +585,7 @@ function App() {
                 <p className="success">Workout started at {formatTime(workout.startTime ?? workout.createdAt)}.</p>
                 <p>Duration: {formatDuration(workout.startTime ?? workout.createdAt, getWorkoutEffectiveEndTime(workout))}</p>
 
-                <button onClick={() => editWorkoutTiming(workout)}>Edit Date/Timing</button>
+                <button className="secondary-button" onClick={() => editWorkoutTiming(workout)}>Edit Date/Timing</button>
 
                 <p>Workout end is based on the most recently added set.</p>
               </>
@@ -767,8 +767,8 @@ function App() {
                         <button onClick={() => setFullWorkoutView((current) => !current)}>
                           {fullWorkoutView ? "Compact View" : "View Full Workout"}
                         </button>
-                        <button onClick={() => editHistoricalWorkoutText(selectedWorkout)}>Edit Text</button>
-                        <button onClick={() => editWorkoutTiming(selectedWorkout)}>Edit Date/Timing</button>
+                        <button className="secondary-button" onClick={() => editHistoricalWorkoutText(selectedWorkout)}>Edit Text</button>
+                        <button className="secondary-button" onClick={() => editWorkoutTiming(selectedWorkout)}>Edit Date/Timing</button>
                       </div>
                     </div>
 
@@ -814,7 +814,7 @@ function App() {
                                         <div className="button-row">
                                           <button className="secondary-button" onClick={() => editSet(set)}>Edit</button>
                                           <button className="secondary-button" onClick={() => editSetPerformedTime(set)}>Edit Time</button>
-                                          <button className="secondary-button" onClick={() => deleteSet(set)}>Delete</button>
+                                          <button className="secondary-button danger" onClick={() => deleteSet(set)}>Delete</button>
                                         </div>
                                       )}
                                     </li>
@@ -885,7 +885,7 @@ function App() {
             <p>Workouts: {workouts?.length ?? 0}</p>
             <p>Exercises: {exercises?.length ?? 0}</p>
 
-            <button onClick={removeUnusedExercises}>Remove Unused Exercises</button>
+            <button className="secondary-button danger" onClick={removeUnusedExercises}>Remove Unused Exercises</button>
 
             <p className="muted">
               This deletes exercise-library entries that are not used by any workout in your history.

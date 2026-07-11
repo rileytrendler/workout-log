@@ -472,7 +472,7 @@ export function ExerciseSetRows({
                   </button>
 
                   <button
-                    className="secondary-button"
+                    className="secondary-button danger"
                     onClick={() =>
                       deleteSet(currentSet)
                     }
