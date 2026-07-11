@@ -5,6 +5,7 @@ import type { Workout, WorkoutExercise, WorkoutSet } from "./db/types";
 import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
+import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
@@ -535,33 +536,15 @@ function App() {
               <button onClick={startTodayWorkout}>Start Today's Workout</button>
             )}
 
-            <form className="inline-form" onSubmit={addExercise}>
-              <div className="exercise-autocomplete">
-                <input
-                  list="exercise-options"
-                  value={exerciseName}
-                  onChange={(event) => setExerciseName(event.target.value)}
-                  placeholder="Exercise name"
-                />
-
-                <datalist id="exercise-options">
-                  {exercises?.map((exercise) => (
-                    <option key={exercise.id} value={exercise.name} />
-                  ))}
-                </datalist>
-
-                {exerciseName.trim() && exercises?.some((exercise) => exercise.name.toLowerCase() === exerciseName.trim().toLowerCase()) && (
-                  <p className="input-hint">Using existing exercise.</p>
-                )}
-
-                {exerciseName.trim() && !exercises?.some((exercise) => exercise.name.toLowerCase() === exerciseName.trim().toLowerCase()) && (
-                  <p className="input-hint">New exercise will be created.</p>
-                )}
-              </div>
+            <form className="inline-form exercise-add-form" onSubmit={addExercise}>
+              <ExerciseAutocomplete
+                exercises={exercises ?? []}
+                value={exerciseName}
+                onChange={setExerciseName}
+              />
 
               <button type="submit">Add Exercise</button>
             </form>
-
 
           </section>
 

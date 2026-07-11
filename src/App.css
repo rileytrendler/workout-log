@@ -392,12 +392,72 @@ textarea {
   gap: 4px;
 }
 
+.exercise-add-form {
+  align-items: start;
+}
+
+.exercise-autocomplete {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .exercise-autocomplete input {
   width: 100%;
+  box-sizing: border-box;
+}
+
+.exercise-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 20px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
+}
+
+.exercise-suggestion {
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  border-radius: 0;
+  text-align: left;
+  background: white;
+}
+
+.exercise-suggestion:first-child {
+  border-radius: 8px 8px 0 0;
+}
+
+.exercise-suggestion:last-child {
+  border-bottom: 0;
+  border-radius: 0 0 8px 8px;
+}
+
+.exercise-suggestion:active,
+.exercise-suggestion:hover,
+.exercise-suggestion:focus {
+  background: #f3f3f3;
 }
 
 .input-hint {
   margin: 0;
   font-size: 13px;
   color: #666;
+}
+
+@media (max-width: 520px) {
+  .exercise-suggestions {
+    top: calc(100% - 20px);
+  }
 }
