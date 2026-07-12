@@ -199,6 +199,19 @@ textarea { min-height: 58px; resize: vertical; }
 .history-item span { color: var(--muted-text); font-size: .78rem; }
 .selected-history-item, .selected-template-item { border-color: var(--accent); color: var(--accent-strong); background-color: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .history-detail { margin-top: 0; }
+.exercise-history-card-heading, .exercise-history-session-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.exercise-history-card-heading h4, .exercise-history-session-heading p { margin: 0; }
+.exercise-history-header h2 { margin: 8px 0 0; }
+.exercise-history-filter { max-width: 280px; }
+.exercise-history-picker h3 { margin: 0; }
+.exercise-history-picker select { max-width: 320px; }
+.exercise-history-summaries { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 10px 0; }
+.history-summary-block { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); font-size: .78rem; overflow-wrap: anywhere; }
+.exercise-history-sessions { display: flex; flex-direction: column; gap: 8px; }
+.exercise-history-session { min-width: 0; }
+.exercise-history-set-list { display: flex; flex-direction: column; gap: 5px; padding-left: 22px; }
+.exercise-history-set-list li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 6px; font-size: .8rem; }
+.exercise-history-set-list .set-note { grid-column: 1 / -1; }
 .history-detail-header .button-row { justify-content: flex-end; }
 .history-detail > p { font-size: .85rem; }
 .full-history-card { background-color: var(--surface-muted); }
@@ -256,6 +269,8 @@ textarea { min-height: 58px; resize: vertical; }
 }
 
 @media (max-width: 520px) {
+  .exercise-history-summaries { grid-template-columns: 1fr; }
+  .exercise-history-session-heading { flex-direction: column; }
   .program-item-heading { flex-direction: column; }
   .rest-timer { grid-template-columns: 1fr; }
   .rest-timer-controls { justify-content: flex-start; }

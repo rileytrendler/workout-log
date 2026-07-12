@@ -11,6 +11,7 @@ import { ExerciseGymProfilePanel } from "./components/ExerciseGymProfilePanel";
 import { TemplateEditor } from "./components/TemplateEditor";
 import { ProgramEditor } from "./components/ProgramEditor";
 import { RestTimerBar } from "./components/RestTimerBar";
+import { ExerciseHistoryPage } from "./components/ExerciseHistoryPage";
 import { useRestTimer } from "./hooks/useRestTimer";
 import {
   deleteExercises,
@@ -108,6 +109,7 @@ function App() {
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
   const [exerciseName, setExerciseName] = useState("");
   const [newGymName, setNewGymName] = useState("");
+  const [exerciseHistory, setExerciseHistory] = useState<{ exerciseId: number; gymId?: number; from: "active" | "history" } | null>(null);
   const restTimer = useRestTimer();
   const { timer: activeRestTimer, dismiss: dismissRestTimer } = restTimer;
 
@@ -647,7 +649,7 @@ function App() {
     <main className="app">
       <h1>Workout Log</h1>
 
-      <nav className="tabs">
+      {!exerciseHistory && <nav className="tabs">
         <button
           className={
             page === "active" ? "active-tab" : ""
@@ -690,9 +692,14 @@ function App() {
         >
           Settings
         </button>
-      </nav>
+      </nav>}
 
-      {page === "active" && (
+      {exerciseHistory && <ExerciseHistoryPage exerciseId={exerciseHistory.exerciseId} gyms={gyms ?? []}
+        initialGymId={exerciseHistory.gymId} excludedWorkoutId={workout?.id}
+        onBack={() => { setPage(exerciseHistory.from); setExerciseHistory(null); }}
+        onOpenWorkout={(workoutId) => { setSelectedWorkoutId(workoutId); setFullWorkoutView(true); setPage("history"); setExerciseHistory(null); }} />}
+
+      {!exerciseHistory && page === "active" && (
         <>
           {restTimer.timer && (
             <RestTimerBar
@@ -764,7 +771,7 @@ function App() {
 
           </section>
 
-          <section className="card start-template-card">
+          {(!workout || workoutExercises?.length === 0) && <section className="card start-template-card">
             <h2>Start From Template</h2>
 
             {templates?.length ? (
@@ -785,7 +792,7 @@ function App() {
             ) : (
               <p className="muted">No saved workout templates yet. Create one on the Templates page.</p>
             )}
-          </section>
+          </section>}
 
           <section>
             <h2>Active Workout Exercises</h2>
@@ -817,6 +824,10 @@ function App() {
                             )}
                           </p>
                         </div>
+
+                        {workoutExerciseId !== undefined && (
+                          <button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: workoutExercise.exerciseId, gymId: workout?.gymId, from: "active" })}>View History</button>
+                        )}
 
                         {workoutExerciseId !== undefined && (
                           <button
@@ -920,9 +931,23 @@ function App() {
         </>
       )}
 
-      {page === "history" && (
+      {!exerciseHistory && page === "history" && (
         <section>
           <h2>Workout History</h2>
+
+          <div className="card exercise-history-picker">
+            <h3>Exercise History</h3>
+            <p className="muted">Choose an exercise to see its prior sessions across workouts.</p>
+            <select defaultValue="" aria-label="Choose an exercise history" onChange={(event) => {
+              const exerciseId = Number(event.target.value);
+              if (exerciseId) setExerciseHistory({ exerciseId, from: "history" });
+              event.target.value = "";
+            }}>
+              <option value="" disabled>Choose an exercise…</option>
+              {exercises?.filter((exercise) => exercise.id !== undefined).map((exercise) =>
+                <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}
+            </select>
+          </div>
 
           {workouts?.length ? (
             <div className="history-layout">
@@ -998,7 +1023,7 @@ function App() {
 
                           return (
                             <div className={fullWorkoutView ? "mini-card full-history-card" : "mini-card"} key={historyWorkoutExercise.id}>
-                              <h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4>
+                              <div className="exercise-history-card-heading"><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
 
                               {fullWorkoutView && (
                                 <>
@@ -1048,17 +1073,17 @@ function App() {
 
       )}
 
-      {page === "templates" && (
+      {!exerciseHistory && page === "templates" && (
         <TemplateEditor
           exercises={exercises ?? []}
         />
       )}
 
-      {page === "programs" && (
+      {!exerciseHistory && page === "programs" && (
         <ProgramEditor exercises={exercises ?? []} onViewActive={() => setPage("active")} />
       )}
 
-      {page === "settings" && (
+      {!exerciseHistory && page === "settings" && (
         <section>
           <h2>Settings / Backup</h2>
 

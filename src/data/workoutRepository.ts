@@ -1,6 +1,8 @@
 import { db } from "../db/db";
 import type {
   Exercise,
+  ExerciseGymProfile,
+  Gym,
   Workout,
   WorkoutExercise,
   WorkoutSet,
@@ -41,6 +43,99 @@ export type WorkoutExerciseContext = {
   workoutExercise: WorkoutExercise;
   exercise: Exercise;
 };
+
+export type ExerciseHistorySession = PriorExercisePerformance & {
+  gym?: Gym;
+};
+
+export type ExerciseHistoryResult = {
+  exercise: Exercise;
+  sessions: ExerciseHistorySession[];
+  latestAnywhere?: PriorExercisePerformance;
+  lastAtSelectedGym?: PriorExercisePerformance;
+  bestBySetNumber: Record<number, PriorSetReference>;
+  selectedGymProfile?: ExerciseGymProfile;
+};
+
+function rankBestReferences(
+  referencesBySetNumber: Map<number, PriorSetReference[]>,
+  measurementType: Exercise["measurementType"]
+) {
+  const bestBySetNumber: Record<number, PriorSetReference> = {};
+  for (const [setNumber, allReferences] of referencesBySetNumber) {
+    const inTargetRange = allReferences.filter((reference) => reference.matchedTargetRepRange);
+    const rankedReferences = [...(inTargetRange.length ? inTargetRange : allReferences)];
+    rankedReferences.sort((a, b) => {
+      if (measurementType === "reps_only") {
+        return b.set.reps! - a.set.reps! ||
+          new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime();
+      }
+      return b.set.weight! - a.set.weight! || b.set.reps! - a.set.reps! ||
+        new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime();
+    });
+    bestBySetNumber[setNumber] = rankedReferences[0];
+  }
+  return bestBySetNumber;
+}
+
+export async function getExerciseHistory(
+  exerciseId: number,
+  selectedGymId?: number,
+  excludedWorkoutId?: number
+): Promise<ExerciseHistoryResult | null> {
+  const exercise = await db.exercises.get(exerciseId);
+  if (!exercise) return null;
+
+  const rows = (await db.workoutExercises.where("exerciseId").equals(exerciseId).toArray())
+    .filter((row): row is WorkoutExercise & { id: number } =>
+      row.id !== undefined && row.workoutId !== excludedWorkoutId);
+  const workouts = await db.workouts.bulkGet(rows.map((row) => row.workoutId));
+  const sets = rows.length
+    ? await db.workoutSets.where("workoutExerciseId").anyOf(rows.map((row) => row.id)).toArray()
+    : [];
+  const workingSets = sets.filter((set) => !set.isWarmup && set.reps !== undefined &&
+    ((exercise.measurementType ?? "weight_reps") === "reps_only" || set.weight !== undefined) &&
+    Boolean(getSetPerformedTime(set)));
+  const setsByRow = new Map<number, WorkoutSet[]>();
+  for (const set of workingSets) {
+    const grouped = setsByRow.get(set.workoutExerciseId) ?? [];
+    grouped.push(set);
+    setsByRow.set(set.workoutExerciseId, grouped);
+  }
+  const gymIds = [...new Set(workouts.flatMap((workout) => workout?.gymId === undefined ? [] : [workout.gymId]))];
+  const gymRows = await db.gyms.bulkGet(gymIds);
+  const gymMap = new Map(gymIds.map((id, index) => [id, gymRows[index]]));
+  const allSessions = rows.flatMap((workoutExercise, index) => {
+    const workout = workouts[index];
+    const sessionSets = setsByRow.get(workoutExercise.id);
+    if (!workout || !sessionSets?.length) return [];
+    return [{ workout, workoutExercise, sets: sessionSets.sort((a, b) => a.setNumber - b.setNumber),
+      gym: workout.gymId === undefined ? undefined : gymMap.get(workout.gymId),
+      gymName: workout.gymId === undefined ? undefined : gymMap.get(workout.gymId)?.name ?? "Unknown gym" }];
+  }).sort((a, b) => {
+    const time = (value: Workout) => new Date(value.startTime ?? value.createdAt).getTime();
+    return time(b.workout) - time(a.workout) || (b.workout.id ?? 0) - (a.workout.id ?? 0);
+  });
+  const sessions = selectedGymId === undefined
+    ? allSessions
+    : allSessions.filter((session) => session.workout.gymId === selectedGymId);
+  const references = new Map<number, PriorSetReference[]>();
+  for (const session of sessions) for (const set of session.sets) {
+    const performedAt = getSetPerformedTime(set)!;
+    const values = references.get(set.setNumber) ?? [];
+    values.push({ set, workout: session.workout, workoutExercise: session.workoutExercise,
+      gymName: session.gymName, performedAt, matchedTargetRepRange: false });
+    references.set(set.setNumber, values);
+  }
+  const toPerformance = (session?: ExerciseHistorySession): PriorExercisePerformance | undefined =>
+    session && ({ workout: session.workout, workoutExercise: session.workoutExercise,
+      sets: session.sets, gymName: session.gymName });
+  const selectedGymProfile = selectedGymId === undefined ? undefined
+    : await db.exerciseGymProfiles.where("[exerciseId+gymId]").equals([exerciseId, selectedGymId]).first();
+  return { exercise, sessions, latestAnywhere: toPerformance(allSessions[0]),
+    lastAtSelectedGym: toPerformance(selectedGymId === undefined ? undefined : allSessions.find((s) => s.workout.gymId === selectedGymId)),
+    bestBySetNumber: rankBestReferences(references, exercise.measurementType ?? "weight_reps"), selectedGymProfile };
+}
 
 export async function getWorkoutExerciseContext(
   workoutExerciseId: number
@@ -303,23 +398,7 @@ export async function getExerciseComparisons(
     }
   }
 
-  const bestBySetNumber: Record<number, PriorSetReference> = {};
-  for (const [setNumber, allReferences] of referencesBySetNumber) {
-    const inTargetRange = allReferences.filter(
-      (reference) => reference.matchedTargetRepRange
-    );
-    const rankedReferences = inTargetRange.length ? inTargetRange : allReferences;
-    rankedReferences.sort((a, b) => {
-      if (measurementType === "reps_only") {
-        return b.set.reps! - a.set.reps! ||
-          new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime();
-      }
-      return b.set.weight! - a.set.weight! ||
-        b.set.reps! - a.set.reps! ||
-        new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime();
-    });
-    bestBySetNumber[setNumber] = rankedReferences[0];
-  }
+  const bestBySetNumber = rankBestReferences(referencesBySetNumber, measurementType);
 
   return {
     lastAtCurrentGym: toPerformance(lastAtCurrentGym),
