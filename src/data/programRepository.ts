@@ -199,6 +199,9 @@ export async function startPlannedProgramWorkout(date: string, gymId?: number): 
       const override = overrideByExercise.get(templateExercise.exerciseId);
       const resolved: Partial<WorkoutExercise> = {};
       for (const field of fields) resolved[field] = override?.[field] !== undefined ? override[field] as never : templateExercise[field] as never;
+      resolved.plannedLastSetIntensityTechnique = override?.plannedLastSetIntensityTechnique !== undefined
+        ? override.plannedLastSetIntensityTechnique ?? undefined
+        : templateExercise.plannedLastSetIntensityTechnique;
       return { workoutId, exerciseId: templateExercise.exerciseId, order: index + 1, ...resolved, startedAt: now, createdAt: now, updatedAt: now };
     });
     await db.workoutExercises.bulkAdd(rows);

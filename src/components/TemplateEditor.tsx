@@ -16,8 +16,10 @@ import {
 } from "../data/templateRepository";
 import type {
   Exercise,
+  LastSetIntensityTechnique,
   WorkoutTemplateExercise
 } from "../db/types";
+import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
 
 type TemplateEditorProps = {
   exercises: Exercise[];
@@ -32,6 +34,7 @@ type TemplateExerciseFields = {
   targetRestSeconds: string;
   warmupInstructions: string;
   prescriptionNotes: string;
+  plannedLastSetIntensityTechnique: "" | LastSetIntensityTechnique;
 };
 
 function optionalNumber(value: string) {
@@ -70,7 +73,8 @@ function TemplateExerciseEditor({
       targetRpeMax: "",
       targetRestSeconds: "",
       warmupInstructions: "",
-      prescriptionNotes: ""
+      prescriptionNotes: "",
+      plannedLastSetIntensityTechnique: ""
     });
 
   useEffect(() => {
@@ -96,7 +100,8 @@ function TemplateExerciseEditor({
       warmupInstructions:
         templateExercise.warmupInstructions ?? "",
       prescriptionNotes:
-        templateExercise.prescriptionNotes ?? ""
+        templateExercise.prescriptionNotes ?? "",
+      plannedLastSetIntensityTechnique: templateExercise.plannedLastSetIntensityTechnique ?? ""
     });
   }, [templateExercise]);
 
@@ -224,7 +229,8 @@ function TemplateExerciseEditor({
             undefined,
           prescriptionNotes:
             fields.prescriptionNotes.trim() ||
-            undefined
+            undefined,
+          plannedLastSetIntensityTechnique: fields.plannedLastSetIntensityTechnique || undefined
         }
       );
     } catch (error) {
@@ -305,6 +311,14 @@ function TemplateExerciseEditor({
       <ExerciseDetailsPanel
         exerciseId={exerciseId}
       />
+
+      <label className="field-label compact-technique-field">
+        Last-set intensity technique
+        <select value={fields.plannedLastSetIntensityTechnique} onChange={(event) => updateField("plannedLastSetIntensityTechnique", event.target.value as TemplateExerciseFields["plannedLastSetIntensityTechnique"])}>
+          <option value="">None</option>
+          {LAST_SET_INTENSITY_TECHNIQUES.map(value => <option key={value} value={value}>{LAST_SET_INTENSITY_LABELS[value]}</option>)}
+        </select>
+      </label>
 
       <div className="template-target-grid">
         <label className="field-label">

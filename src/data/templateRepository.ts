@@ -151,6 +151,7 @@ export async function updateTemplateExercise(
       | "targetRestSeconds"
       | "warmupInstructions"
       | "prescriptionNotes"
+      | "plannedLastSetIntensityTechnique"
     >
   >
 ): Promise<void> {

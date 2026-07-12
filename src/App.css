@@ -294,3 +294,7 @@ textarea { min-height: 58px; resize: vertical; }
   .tabs button { min-width: 105px; }
   .card { padding: 14px; }
 }
+.compact-technique-field,
+.actual-technique-field {
+  max-width: 24rem;
+}

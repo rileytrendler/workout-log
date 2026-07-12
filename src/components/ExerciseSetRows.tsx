@@ -5,14 +5,17 @@ import {
   getExerciseComparisons,
   getWorkoutExerciseContext,
   saveSetPerformance,
+  updateActualLastSetIntensityTechnique,
   updateSetNote,
   type PriorExercisePerformance,
   type PriorSetReference
 } from "../data/workoutRepository";
 import type {
   ExerciseMeasurementType,
+  LastSetIntensityTechnique,
   WorkoutSet
 } from "../db/types";
+import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
 
 type ExerciseSetRowsProps = {
   workoutExerciseId: number;
@@ -362,6 +365,7 @@ export function ExerciseSetRows({
     { length: rowCount },
     (_, index) => index + 1
   );
+  const finalWorkingSet = [...currentSets].filter(set => set.isWarmup !== true).sort((a, b) => b.setNumber - a.setNumber)[0];
 
   return (
     <div className="set-entry-rows">
@@ -588,6 +592,18 @@ export function ExerciseSetRows({
       >
         + Add Set
       </button>
+
+      {finalWorkingSet && <label className="field-label actual-technique-field">
+        Actual technique · Set {finalWorkingSet.setNumber}
+        <select
+          value={context?.workoutExercise.actualLastSetIntensityTechnique ?? ""}
+          disabled={finalWorkingSet.actualRpe !== 10}
+          onChange={(event) => updateActualLastSetIntensityTechnique(workoutExerciseId, (event.target.value || undefined) as LastSetIntensityTechnique | undefined)}
+        >
+          <option value="">{finalWorkingSet.actualRpe === 10 ? "Not recorded" : "N/A — requires RPE 10"}</option>
+          {LAST_SET_INTENSITY_TECHNIQUES.map(value => <option key={value} value={value}>{LAST_SET_INTENSITY_LABELS[value]}</option>)}
+        </select>
+      </label>}
     </div>
   );
 }

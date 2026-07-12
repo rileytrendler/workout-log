@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db/db";
-import type { Gym, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
+import type { Gym, LastSetIntensityTechnique, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
+import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES, intensityTechniqueLabel } from "./utils/intensityTechniques";
 import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
 import { ExerciseSetRows } from "./components/ExerciseSetRows";
@@ -27,6 +28,7 @@ import {
   startBlankWorkout,
   startWorkoutFromTemplate,
   updateHistoricalSet,
+  updateActualLastSetIntensityTechnique,
   updateSetPerformedTime,
   updateWorkoutExerciseNotes,
   updateWorkoutGym,
@@ -375,6 +377,7 @@ function App() {
     if (workoutExercise.targetRestSeconds !== undefined) {
       items.push(`${workoutExercise.targetRestSeconds}s rest`);
     }
+    if (workoutExercise.plannedLastSetIntensityTechnique) items.push(`Last set: ${intensityTechniqueLabel(workoutExercise.plannedLastSetIntensityTechnique)}`);
 
     const hasText = workoutExercise.warmupInstructions || workoutExercise.prescriptionNotes;
     if (!items.length && !hasText) return null;
@@ -1024,6 +1027,7 @@ function App() {
                           return (
                             <div className={fullWorkoutView ? "mini-card full-history-card" : "mini-card"} key={historyWorkoutExercise.id}>
                               <div className="exercise-history-card-heading"><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
+                              {historyWorkoutExercise.actualLastSetIntensityTechnique && <p className="set-note">Actual last-set technique: {intensityTechniqueLabel(historyWorkoutExercise.actualLastSetIntensityTechnique)}</p>}
 
                               {fullWorkoutView && (
                                 <>
@@ -1033,7 +1037,7 @@ function App() {
                               )}
 
                               {sets.length ? (
-                                <ol>
+                                <><ol>
                                   {sets.map((set) => (
                                     <li key={set.id} className={fullWorkoutView ? "set-row" : ""}>
                                       <div>
@@ -1049,7 +1053,7 @@ function App() {
                                       )}
                                     </li>
                                   ))}
-                                </ol>
+                                </ol>{fullWorkoutView && (() => { const finalSet = [...sets].filter(set => set.isWarmup !== true).sort((a,b) => b.setNumber-a.setNumber)[0]; return finalSet ? <label className="field-label actual-technique-field">Actual technique · Set {finalSet.setNumber}<select value={historyWorkoutExercise.actualLastSetIntensityTechnique ?? ""} disabled={finalSet.actualRpe !== 10} onChange={event => historyWorkoutExerciseId && updateActualLastSetIntensityTechnique(historyWorkoutExerciseId, (event.target.value || undefined) as LastSetIntensityTechnique | undefined)}><option value="">{finalSet.actualRpe === 10 ? "Not recorded" : "N/A — requires RPE 10"}</option>{LAST_SET_INTENSITY_TECHNIQUES.map(value => <option key={value} value={value}>{LAST_SET_INTENSITY_LABELS[value]}</option>)}</select></label> : null; })()}</>
                               ) : (
                                 <p>No sets recorded.</p>
                               )}

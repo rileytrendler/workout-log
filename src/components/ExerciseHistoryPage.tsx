@@ -4,6 +4,7 @@ import type { Gym, WorkoutSet } from "../db/types";
 import { getExerciseHistory, type PriorExercisePerformance } from "../data/workoutRepository";
 import { ExerciseDetailsPanel } from "./ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./ExerciseGymProfilePanel";
+import { intensityTechniqueLabel } from "../utils/intensityTechniques";
 
 type Props = {
   exerciseId: number;
@@ -71,7 +72,7 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
         {session.workoutExercise.notes && <p className="note-block">{session.workoutExercise.notes}</p>}
         <ol className="exercise-history-set-list">{session.sets.map((set) => <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}</span>
           {set.performedAt && <span className="muted">{new Date(set.performedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
-          {set.notes && <p className="set-note">{set.notes}</p>}</li>)}</ol>
+          {set.notes && <p className="set-note">{set.notes}</p>}{set.setNumber === Math.max(...session.sets.map(candidate => candidate.setNumber)) && session.workoutExercise.actualLastSetIntensityTechnique && <p className="set-note">Technique: {intensityTechniqueLabel(session.workoutExercise.actualLastSetIntensityTechnique)}</p>}</li>)}</ol>
       </article>)}</div>}
   </section>;
 }

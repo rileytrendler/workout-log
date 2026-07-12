@@ -1,4 +1,5 @@
 import { db } from "../db/db";
+import { isLastSetIntensityTechnique } from "./intensityTechniques";
 
 export type WorkoutLogBackup = {
   exportedAt: string;
@@ -72,6 +73,26 @@ export async function importJsonBackup(file: File) {
     ...(workout as Record<string, unknown>),
     status: (workout as Record<string, unknown>).status ?? "completed"
   }));
+  const cleanTechnique = (row: unknown, field: string, allowNull = false) => {
+    const copy = { ...(row as Record<string, unknown>) };
+    const value = copy[field];
+    if (value !== undefined && !(allowNull && value === null) && !isLastSetIntensityTechnique(value)) delete copy[field];
+    return copy;
+  };
+  const importedTemplateExercises = (parsed.data.workoutTemplateExercises ?? []).map(row => cleanTechnique(row, "plannedLastSetIntensityTechnique"));
+  const importedOverrides = (parsed.data.programWorkoutExerciseOverrides ?? []).map(row => cleanTechnique(row, "plannedLastSetIntensityTechnique", true));
+  const importedSets = parsed.data.workoutSets ?? [];
+  const importedWorkoutExercises = (parsed.data.workoutExercises ?? []).map(row => {
+    const copy = cleanTechnique(cleanTechnique(row, "plannedLastSetIntensityTechnique"), "actualLastSetIntensityTechnique");
+    if (copy.actualLastSetIntensityTechnique !== undefined) {
+      const finalSet = importedSets
+        .map(set => set as Record<string, unknown>)
+        .filter(set => set.workoutExerciseId === copy.id && set.isWarmup !== true)
+        .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
+      if (!finalSet || finalSet.actualRpe !== 10) delete copy.actualLastSetIntensityTechnique;
+    }
+    return copy;
+  });
   if (importedWorkouts.filter((workout) => workout.status === "active").length > 1) {
     throw new Error("This backup contains more than one active workout and cannot be imported safely.");
   }
@@ -133,19 +154,19 @@ export async function importJsonBackup(file: File) {
       );
 
       await db.workoutTemplateExercises.bulkAdd(
-        (parsed.data.workoutTemplateExercises ?? []) as never[]
+        importedTemplateExercises as never[]
       );
 
       await db.programs.bulkAdd((parsed.data.programs ?? []) as never[]);
       await db.programWeeks.bulkAdd((parsed.data.programWeeks ?? []) as never[]);
       await db.programWorkouts.bulkAdd((parsed.data.programWorkouts ?? []) as never[]);
-      await db.programWorkoutExerciseOverrides.bulkAdd((parsed.data.programWorkoutExerciseOverrides ?? []) as never[]);
+      await db.programWorkoutExerciseOverrides.bulkAdd(importedOverrides as never[]);
       await db.activeProgramStates.bulkAdd(importedActiveProgramStates as never[]);
 
       await db.workouts.bulkAdd(importedWorkouts as never[]);
 
       await db.workoutExercises.bulkAdd(
-        parsed.data.workoutExercises as never[]
+        importedWorkoutExercises as never[]
       );
 
       await db.workoutSets.bulkAdd(
@@ -210,6 +231,8 @@ export async function downloadSetsCsv() {
       "programWorkout",
       "exerciseName",
       "exerciseNotes",
+      "plannedLastSetIntensityTechnique",
+      "actualLastSetIntensityTechnique",
       "setNumber",
       "weight",
       "reps",
@@ -248,6 +271,9 @@ export async function downloadSetsCsv() {
     const workoutExercise = workoutExerciseById.get(set.workoutExerciseId);
     const workout = workoutExercise ? workoutById.get(workoutExercise.workoutId) : undefined;
     const exercise = workoutExercise ? exerciseById.get(workoutExercise.exerciseId) : undefined;
+    const finalWorkingSetNumber = workoutExercise
+      ? Math.max(...workoutSets.filter(candidate => candidate.workoutExerciseId === workoutExercise.id && candidate.isWarmup !== true).map(candidate => candidate.setNumber), -1)
+      : -1;
 
     rows.push([
       workout?.date,
@@ -263,6 +289,8 @@ export async function downloadSetsCsv() {
       workout?.programWorkoutNameSnapshot,
       exercise?.name,
       workoutExercise?.notes,
+      workoutExercise?.plannedLastSetIntensityTechnique,
+      set.isWarmup !== true && set.setNumber === finalWorkingSetNumber ? workoutExercise?.actualLastSetIntensityTechnique : undefined,
       set.setNumber,
       set.weight,
       set.reps,

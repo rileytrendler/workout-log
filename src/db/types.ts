@@ -3,6 +3,8 @@ export type ExerciseMeasurementType =
   | "reps_only"
   | "bodyweight_added_weight";
 
+export type LastSetIntensityTechnique = "failure" | "failure_llps" | "myo_reps";
+
 export type Gym = {
   id?: number;
   name: string;
@@ -64,6 +66,8 @@ export type WorkoutExercise = {
   targetRestSeconds?: number;
   warmupInstructions?: string;
   prescriptionNotes?: string;
+  plannedLastSetIntensityTechnique?: LastSetIntensityTechnique;
+  actualLastSetIntensityTechnique?: LastSetIntensityTechnique;
 
   createdAt?: string;
   updatedAt?: string;
@@ -108,6 +112,7 @@ export type WorkoutTemplateExercise = {
 
   warmupInstructions?: string;
   prescriptionNotes?: string;
+  plannedLastSetIntensityTechnique?: LastSetIntensityTechnique;
 
   createdAt: string;
   updatedAt: string;
@@ -168,6 +173,7 @@ export type ProgramWorkoutExerciseOverride = {
   targetRestSeconds?: number;
   warmupInstructions?: string;
   prescriptionNotes?: string;
+  plannedLastSetIntensityTechnique?: LastSetIntensityTechnique | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -184,6 +184,7 @@ function snapshotTemplateExercise(
     targetRestSeconds: templateExercise.targetRestSeconds,
     warmupInstructions: templateExercise.warmupInstructions,
     prescriptionNotes: templateExercise.prescriptionNotes,
+    plannedLastSetIntensityTechnique: templateExercise.plannedLastSetIntensityTechnique,
     startedAt: now,
     createdAt: now,
     updatedAt: now
@@ -437,6 +438,7 @@ export async function saveSetPerformance(
     await db.transaction(
       "rw",
       db.workoutSets,
+      db.workoutExercises,
       db.workouts,
       async () => {
         await db.workoutSets.update(existingSet.id!, {
@@ -445,6 +447,8 @@ export async function saveSetPerformance(
           actualRpe: input.actualRpe,
           updatedAt: now
         });
+
+        await revalidateActualLastSetTechnique(workoutExerciseId);
 
         await db.workouts.update(workoutExercise.workoutId, {
           updatedAt: now
@@ -458,6 +462,7 @@ export async function saveSetPerformance(
   const setId = await db.transaction(
     "rw",
     db.workoutSets,
+    db.workoutExercises,
     db.workouts,
     async () => {
       const setId = await db.workoutSets.add({
@@ -470,6 +475,8 @@ export async function saveSetPerformance(
         createdAt: now,
         updatedAt: now
       });
+
+      await revalidateActualLastSetTechnique(workoutExerciseId, setId);
 
       await db.workouts.update(workoutExercise.workoutId, {
         lastSetAt: now,
@@ -504,13 +511,35 @@ export async function updateHistoricalSet(
   setId: number,
   changes: HistoricalSetChanges
 ): Promise<void> {
-  await db.workoutSets.update(setId, {
-    weight: changes.weight,
-    reps: changes.reps,
-    actualRpe: changes.actualRpe,
-    notes: changes.notes?.trim() || undefined,
-    updatedAt: nowString()
+  const set = await db.workoutSets.get(setId);
+  if (!set) throw new Error("Set could not be found.");
+  await db.transaction("rw", db.workoutSets, db.workoutExercises, async () => {
+    await db.workoutSets.update(setId, { weight: changes.weight, reps: changes.reps, actualRpe: changes.actualRpe,
+      notes: changes.notes?.trim() || undefined, updatedAt: nowString() });
+    await revalidateActualLastSetTechnique(set.workoutExerciseId);
   });
+}
+
+export async function getFinalWorkingSet(workoutExerciseId: number): Promise<WorkoutSet | undefined> {
+  const sets = await db.workoutSets.where("workoutExerciseId").equals(workoutExerciseId).toArray();
+  return sets.filter(set => set.isWarmup !== true).sort((a, b) => b.setNumber - a.setNumber)[0];
+}
+
+async function revalidateActualLastSetTechnique(workoutExerciseId: number, newlyCreatedSetId?: number) {
+  const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+  if (!workoutExercise?.actualLastSetIntensityTechnique) return;
+  const finalSet = await getFinalWorkingSet(workoutExerciseId);
+  if (!finalSet || finalSet.actualRpe !== 10 || (newlyCreatedSetId !== undefined && finalSet.id === newlyCreatedSetId)) {
+    await db.workoutExercises.update(workoutExerciseId, { actualLastSetIntensityTechnique: undefined, updatedAt: nowString() });
+  }
+}
+
+export async function updateActualLastSetIntensityTechnique(workoutExerciseId: number, technique: WorkoutExercise["actualLastSetIntensityTechnique"]): Promise<void> {
+  const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+  if (!workoutExercise) throw new Error("Workout exercise could not be found.");
+  const finalSet = await getFinalWorkingSet(workoutExerciseId);
+  if (technique && (!finalSet || finalSet.actualRpe !== 10)) throw new Error("An actual technique requires a final working set at RPE 10.");
+  await db.workoutExercises.update(workoutExerciseId, { actualLastSetIntensityTechnique: technique, updatedAt: nowString() });
 }
 
 export async function updateSetPerformedTime(
@@ -545,8 +574,16 @@ export async function deleteWorkoutSet(setId: number): Promise<void> {
   const workoutExercise = await db.workoutExercises.get(
     set.workoutExerciseId
   );
+  const wasFinalWorkingSet = set.isWarmup !== true && (await getFinalWorkingSet(set.workoutExerciseId))?.id === setId;
 
-  await db.workoutSets.delete(setId);
+  await db.transaction("rw", db.workoutSets, db.workoutExercises, async () => {
+    await db.workoutSets.delete(setId);
+    if (wasFinalWorkingSet) {
+      await db.workoutExercises.update(set.workoutExerciseId, { actualLastSetIntensityTechnique: undefined, updatedAt: nowString() });
+    } else {
+      await revalidateActualLastSetTechnique(set.workoutExerciseId);
+    }
+  });
 
   if (workoutExercise) {
     await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
