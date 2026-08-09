@@ -17,6 +17,7 @@ import {
   isInCompletedRepRange,
   validateStoredRepResult
 } from "../utils/failureSemantics";
+import { derivePersonalRecordStatuses, type PersonalRecordStatus } from "../utils/personalRecords";
 
 export type ApplyWorkoutTemplateResult = {
   workout: Workout;
@@ -64,6 +65,16 @@ export type ExerciseHistoryResult = {
   bestBySetNumber: Record<number, PriorSetReference>;
   selectedGymProfile?: ExerciseGymProfile;
 };
+
+export async function getPersonalRecordStatuses(): Promise<Map<number, PersonalRecordStatus>> {
+  const [exercises, workouts, workoutExercises, workoutSets] = await Promise.all([
+    db.exercises.toArray(),
+    db.workouts.toArray(),
+    db.workoutExercises.toArray(),
+    db.workoutSets.toArray()
+  ]);
+  return derivePersonalRecordStatuses({ exercises, workouts, workoutExercises, workoutSets });
+}
 
 function rankBestReferences(
   referencesBySetNumber: Map<number, PriorSetReference[]>,

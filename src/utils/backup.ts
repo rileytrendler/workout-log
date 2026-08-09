@@ -2,6 +2,7 @@ import { db } from "../db/db";
 import { isLastSetIntensityTechnique } from "./intensityTechniques";
 import { formatReps } from "./setFormatting";
 import { validateStoredRepResult } from "./failureSemantics";
+import { derivePersonalRecordStatuses } from "./personalRecords";
 
 export type WorkoutLogBackup = {
   exportedAt: string;
@@ -364,6 +365,7 @@ export async function downloadSetsCsv() {
   const workoutExerciseById = new Map(workoutExercises.map((workoutExercise) => [workoutExercise.id, workoutExercise]));
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
   const gymById = new Map(gyms.map((gym) => [gym.id, gym]));
+  const personalRecordStatuses = derivePersonalRecordStatuses({ exercises, workouts, workoutExercises, workoutSets });
 
   const rows: unknown[][] = [
     [
@@ -394,6 +396,8 @@ export async function downloadSetsCsv() {
       "rir",
       "isWarmup",
       "isFailure",
+      "isPR",
+      "isSetPR",
       "longLengthPartialReps",
       "myoMiniSets",
       "setNotes",
@@ -459,6 +463,9 @@ export async function downloadSetsCsv() {
       set.rir,
       set.isWarmup,
       set.isFailure,
+      set.id !== undefined && personalRecordStatuses.get(set.id)?.isAbsolutePR === true,
+      set.id !== undefined && personalRecordStatuses.get(set.id)?.isAbsolutePR !== true &&
+        personalRecordStatuses.get(set.id)?.isSetPR === true,
       set.isWarmup !== true && set.setNumber === finalWorkingSetNumber ? workoutExercise?.longLengthPartialReps : undefined,
       set.id && set.isWarmup !== true && set.setNumber === finalWorkingSetNumber
         ? myoSets.filter(row => row.workoutSetId === set.id).sort((a, b) => a.order - b.order).map(formatReps).join("|") : undefined,

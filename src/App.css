@@ -174,8 +174,10 @@ textarea { min-height: 58px; resize: vertical; }
 .performance-set-list { display: flex; flex-wrap: wrap; column-gap: 10px; row-gap: 1px; margin-top: 2px; }
 .performance-set-list span { overflow-wrap: anywhere; min-width: 0; }
 .set-entry-row { padding-top: 7px; border-top: 1px solid var(--border); }
-.set-entry-main { display: grid; grid-template-columns: 44px minmax(0, 1.15fr) minmax(0, .85fr) 2.5rem minmax(0, .72fr); gap: 5px; align-items: center; }
+.set-entry-main { display: grid; grid-template-columns: 88px minmax(0, 1.15fr) minmax(0, .85fr) 2.5rem minmax(0, .72fr); gap: 5px; align-items: center; }
 .set-entry-main > strong { font-size: .78rem; white-space: nowrap; }
+.pr-badge { display: inline-flex; align-items: center; margin-left: 5px; padding: 1px 5px; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent-strong); background: var(--accent-soft); font-size: .65rem; font-weight: 850; line-height: 1.2; vertical-align: middle; }
+.set-pr-badge { border-color: var(--border); color: var(--muted-text); background: var(--surface-muted); font-weight: 750; }
 .set-entry-main input { padding: 8px 6px; text-align: center; }
 .previous-inline { grid-column: 2 / -1; color: var(--muted-text); font-size: .76rem; line-height: 1.25; }
 .set-reference-list { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
@@ -324,7 +326,7 @@ textarea { min-height: 58px; resize: vertical; }
 .historical-set-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) 2.5rem minmax(0, 1fr); gap: .5rem; margin-top: .6rem; width: min(100%, 32rem); }
 .historical-set-editor textarea, .historical-set-editor .button-row { grid-column: 1 / -1; }
 @media (max-width: 390px) {
-  .set-entry-main { grid-template-columns: 40px minmax(0, 1fr) minmax(0, .8fr) 2.3rem minmax(0, .68fr); gap: 4px; }
+  .set-entry-main { grid-template-columns: 82px minmax(0, 1fr) minmax(0, .8fr) 2.3rem minmax(0, .68fr); gap: 4px; }
   .failure-toggle { min-width: 2.3rem; padding-inline: .3rem; }
   .myo-set-row { grid-template-columns: 1.25rem minmax(0, 1fr) 2.3rem auto; gap: .3rem; }
   .myo-set-row button { padding-inline: .45rem; }

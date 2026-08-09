@@ -36,9 +36,11 @@ import {
   updateWorkoutGym,
   updateWorkoutText,
   deleteWorkoutSet,
+  getPersonalRecordStatuses,
   getWorkoutExerciseSubstitutionChoices,
   swapWorkoutExercise
 } from "./data/workoutRepository";
+import { PersonalRecordBadge } from "./components/PersonalRecordBadge";
 import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
 import { getActiveProgramState, getPlannedProgramWorkout, skipPlannedWorkout, startPlannedProgramWorkout } from "./data/programRepository";
 
@@ -281,6 +283,11 @@ function App() {
         .toArray();
     },
     [workoutExercises]
+  );
+
+  const personalRecordStatuses = useLiveQuery(
+    () => getPersonalRecordStatuses(),
+    []
   );
 
   useEffect(() => {
@@ -712,6 +719,7 @@ function App() {
     return (
       <>
         <strong>Set {set.setNumber}:</strong> {formatSetPerformance(set, measurementType)}
+        <PersonalRecordBadge status={set.id === undefined ? undefined : personalRecordStatuses?.get(set.id)} />
         {showFullDetails && <> <span className="muted">({formatTime(getSetPerformedTime(set))})</span></>}
         {showFullDetails && set.notes && <p className="set-note">{set.notes}</p>}
       </>
@@ -769,6 +777,7 @@ function App() {
 
       {exerciseHistory && <ExerciseHistoryPage exerciseId={exerciseHistory.exerciseId} gyms={gyms ?? []}
         initialGymId={exerciseHistory.gymId} excludedWorkoutId={workout?.id}
+        personalRecordStatuses={personalRecordStatuses}
         onBack={() => { setPage(exerciseHistory.from); setExerciseHistory(null); }}
         onOpenWorkout={(workoutId) => { setSelectedWorkoutId(workoutId); setFullWorkoutView(true); setPage("history"); setExerciseHistory(null); }} />}
 
@@ -971,6 +980,7 @@ function App() {
                           plannedSetCount={
                             workoutExercise.plannedSetCount
                           }
+                          personalRecordStatuses={personalRecordStatuses}
                           onWorkingSetCreated={(setId, setNumber) =>
                             startRest(workoutExercise, setId, setNumber)
                           }

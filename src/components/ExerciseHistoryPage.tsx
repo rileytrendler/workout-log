@@ -6,6 +6,8 @@ import { ExerciseDetailsPanel } from "./ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./ExerciseGymProfilePanel";
 import { formatActualTechniqueDetails, formatSetPerformance } from "../utils/setFormatting";
 import { findFinalWorkingSet } from "../utils/failureSemantics";
+import type { PersonalRecordStatus } from "../utils/personalRecords";
+import { PersonalRecordBadge } from "./PersonalRecordBadge";
 
 type Props = {
   exerciseId: number;
@@ -14,6 +16,7 @@ type Props = {
   excludedWorkoutId?: number;
   onBack: () => void;
   onOpenWorkout: (workoutId: number) => void;
+  personalRecordStatuses?: ReadonlyMap<number, PersonalRecordStatus>;
 };
 
 function measurementLabel(type?: string) {
@@ -41,7 +44,7 @@ function TechniqueSummary({ workoutExercise, finalSetId }: { workoutExercise: Wo
   return text ? <p className="set-note">{text}</p> : null;
 }
 
-export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWorkoutId, onBack, onOpenWorkout }: Props) {
+export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWorkoutId, onBack, onOpenWorkout, personalRecordStatuses }: Props) {
   const [gymId, setGymId] = useState<number | undefined>(initialGymId);
   const result = useLiveQuery(() => getExerciseHistory(exerciseId, gymId, excludedWorkoutId), [exerciseId, gymId, excludedWorkoutId]);
   if (result === undefined) return <section><button className="secondary-button" onClick={onBack}>Back</button><p>Loading exercise history…</p></section>;
@@ -84,11 +87,14 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
             session.workoutExercise.exerciseId !== session.workoutExercise.prescribedExerciseId &&
             session.workoutExercise.prescribedExerciseNameSnapshot &&
             <p className="substitution-note">Substituted for {session.workoutExercise.prescribedExerciseNameSnapshot}</p>}
-          <ol className="exercise-history-set-list">{session.sets.map((set) => <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}</span>
+          <ol className="exercise-history-set-list">{session.sets.map((set) => {
+            const status = set.id === undefined ? undefined : personalRecordStatuses?.get(set.id);
+            return <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}
+              <PersonalRecordBadge status={status} /></span>
             {set.performedAt && <span className="muted">{new Date(set.performedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
             {set.notes && <p className="set-note">{set.notes}</p>}
             {set.id !== undefined && set.id === finalSet?.id &&
-              <TechniqueSummary workoutExercise={session.workoutExercise} finalSetId={set.id} />}</li>)}</ol>
+              <TechniqueSummary workoutExercise={session.workoutExercise} finalSetId={set.id} />}</li>})}</ol>
         </article>;
       })}</div>}
   </section>;

@@ -25,12 +25,15 @@ import type {
 import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
 import { formatSetPerformance } from "../utils/setFormatting";
 import { encodeRepResult, findFinalWorkingSet } from "../utils/failureSemantics";
+import type { PersonalRecordStatus } from "../utils/personalRecords";
+import { PersonalRecordBadge } from "./PersonalRecordBadge";
 
 type ExerciseSetRowsProps = {
   workoutExerciseId: number;
   currentSets: WorkoutSet[];
   plannedSetCount?: number;
   onWorkingSetCreated?: (setId: number, setNumber: number) => void;
+  personalRecordStatuses?: ReadonlyMap<number, PersonalRecordStatus>;
 };
 
 type SetDraft = {
@@ -112,7 +115,8 @@ export function ExerciseSetRows({
   workoutExerciseId,
   currentSets,
   plannedSetCount,
-  onWorkingSetCreated
+  onWorkingSetCreated,
+  personalRecordStatuses
 }: ExerciseSetRowsProps) {
   const [drafts, setDrafts] = useState<
     Record<number, SetDraft>
@@ -399,7 +403,8 @@ export function ExerciseSetRows({
             key={setNumber}
           >
             <div className="set-entry-main">
-              <strong>Set {setNumber}</strong>
+              <strong>Set {setNumber}<PersonalRecordBadge status={currentSet?.id === undefined
+                ? undefined : personalRecordStatuses?.get(currentSet.id)} /></strong>
 
               {displaysWeightInput(measurementType) && (
                 <input
