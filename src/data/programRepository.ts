@@ -124,7 +124,7 @@ export async function activateProgram(programId: number, replace = false): Promi
     if (!first?.week.id || !first.workout.id) throw new Error("Add at least one workout slot to this program before activating it.");
     const now = nowString();
     await db.activeProgramStates.clear();
-    await db.activeProgramStates.add({ programId, currentProgramWeekId: first.week.id, currentProgramWorkoutId: first.workout.id, activatedAt: now, updatedAt: now });
+    await db.activeProgramStates.add({ programId, currentProgramWeekId: first.week.id, currentProgramWorkoutId: first.workout.id, cycleNumber: 1, activatedAt: now, updatedAt: now });
   });
 }
 
@@ -157,7 +157,13 @@ export async function advanceActiveProgram(expected?: { programId: number; weekI
     }
   }
   if (!next?.week.id || !next.workout.id) return "mismatch";
-  await db.activeProgramStates.update(state.id!, { currentProgramWeekId: next.week.id, currentProgramWorkoutId: next.workout.id, updatedAt: nowString() });
+  const wrappedProgram = index === slots.length - 1 && program.endBehavior === "repeat";
+  await db.activeProgramStates.update(state.id!, {
+    currentProgramWeekId: next.week.id,
+    currentProgramWorkoutId: next.workout.id,
+    cycleNumber: wrappedProgram ? state.cycleNumber + 1 : state.cycleNumber,
+    updatedAt: nowString()
+  });
   return "advanced";
 }
 
@@ -193,7 +199,7 @@ export async function startPlannedProgramWorkout(date: string, gymId?: number): 
     const weekLabel = planned.week.name?.trim() || `Week ${planned.week.order}`;
     const workoutName = planned.workout.displayName?.trim() || planned.template.name;
     const notes = [planned.template.notes?.trim(), planned.workout.notes?.trim()].filter(Boolean).join("\n\n") || undefined;
-    const workoutId = await db.workouts.add({ date, status: "active", gymId, title: workoutName, notes, startTime: now, createdAt: now, updatedAt: now, programId: planned.program.id, programWeekId: planned.week.id, programWorkoutId: planned.workout.id, programNameSnapshot: planned.program.name, programWeekLabelSnapshot: weekLabel, programWorkoutNameSnapshot: workoutName });
+    const workoutId = await db.workouts.add({ date, status: "active", gymId, title: workoutName, notes, startTime: now, createdAt: now, updatedAt: now, programId: planned.program.id, programWeekId: planned.week.id, programWorkoutId: planned.workout.id, programNameSnapshot: planned.program.name, programCycleNumber: planned.state.cycleNumber, programWeekLabelSnapshot: weekLabel, programWorkoutNameSnapshot: workoutName });
     const fields = ["plannedSetCount","targetMinReps","targetMaxReps","targetRpeMin","targetRpeMax","targetRestSeconds","warmupInstructions","prescriptionNotes"] as const;
     const templateExerciseIds = templateExercises.flatMap(row => row.id ?? []);
     const substitutions = templateExerciseIds.length

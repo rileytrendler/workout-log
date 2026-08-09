@@ -49,7 +49,7 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
   const type = result.exercise.measurementType ?? "weight_reps";
   const selectedGym = gymId === undefined ? undefined : gyms.find((gym) => gym.id === gymId);
   const source = (workout: typeof result.sessions[number]["workout"]) =>
-    [workout.programNameSnapshot, workout.programWeekLabelSnapshot, workout.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
+    [workout.programNameSnapshot, workout.programCycleNumber ? `Cycle ${workout.programCycleNumber}` : undefined, workout.programWeekLabelSnapshot, workout.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
 
   return <section className="exercise-history-page">
     <div className="exercise-history-header">

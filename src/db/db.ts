@@ -226,6 +226,27 @@ class WorkoutLogDatabase extends Dexie {
       programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]",
       activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
     });
+
+    this.version(13).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+      workouts: "++id, date, status, gymId, programId, programWorkoutId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, prescribedExerciseId, sourceTemplateExerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+      workoutSetMyoSets: "++id, workoutSetId, order, &[workoutSetId+order]",
+      workoutTemplates: "++id, name, createdAt, updatedAt",
+      workoutTemplateExercises: "++id, templateId, exerciseId, order",
+      workoutTemplateExerciseSubstitutions: "++id, templateExerciseId, substituteExerciseId, order, &[templateExerciseId+substituteExerciseId]",
+      workoutExerciseSubstitutionOptions: "++id, workoutExerciseId, exerciseId, order, &[workoutExerciseId+exerciseId]",
+      programs: "++id, name, createdAt, updatedAt",
+      programWeeks: "++id, programId, order, [programId+order]",
+      programWorkouts: "++id, programWeekId, templateId, order, [programWeekId+order]",
+      programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]",
+      activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
+    }).upgrade(transaction => transaction.table("activeProgramStates").toCollection().modify(state => {
+      if (!Number.isInteger(state.cycleNumber) || state.cycleNumber < 1) state.cycleNumber = 1;
+    }));
   }
 }
 

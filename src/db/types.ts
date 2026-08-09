@@ -44,6 +44,7 @@ export type Workout = {
   programWeekId?: number;
   programWorkoutId?: number;
   programNameSnapshot?: string;
+  programCycleNumber?: number;
   programWeekLabelSnapshot?: string;
   programWorkoutNameSnapshot?: string;
   programProgressAppliedAt?: string;
@@ -218,6 +219,7 @@ export type ActiveProgramState = {
   programId: number;
   currentProgramWeekId: number;
   currentProgramWorkoutId: number;
+  cycleNumber: number;
   activatedAt: string;
   updatedAt: string;
 };

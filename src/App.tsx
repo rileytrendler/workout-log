@@ -144,7 +144,7 @@ function fromDateTimeLocalValue(value: string) {
 }
 
 function programSource(workout?: Workout) {
-  return [workout?.programNameSnapshot, workout?.programWeekLabelSnapshot, workout?.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
+  return [workout?.programNameSnapshot, workout?.programCycleNumber ? `Cycle ${workout.programCycleNumber}` : undefined, workout?.programWeekLabelSnapshot, workout?.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
 }
 
 function HistoricalSetEditor({ set, measurementType, advancedTechnique, onClose }: {
@@ -788,7 +788,8 @@ function App() {
             <section className="card planned-workout-card">
               <span className="active-badge">Planned Workout</span>
               <h2>{plannedProgramWorkout.program.name}</h2>
-              <p><strong>{plannedProgramWorkout.week.name || `Week ${plannedProgramWorkout.week.order}`} · {plannedProgramWorkout.workout.displayName || plannedProgramWorkout.template.name}</strong></p>
+              <p><strong>Cycle {plannedProgramWorkout.state.cycleNumber} · {plannedProgramWorkout.week.name || `Week ${plannedProgramWorkout.week.order}`}</strong></p>
+              <p><strong>{plannedProgramWorkout.workout.displayName || plannedProgramWorkout.template.name}</strong></p>
               <p className="muted">Template: {plannedProgramWorkout.template.name} · Workout {plannedProgramWorkout.workoutIndex} of {plannedProgramWorkout.workoutCount}</p>
               {plannedProgramWorkout.workout.notes && <p className="note-block">{plannedProgramWorkout.workout.notes}</p>}
               <div className="button-row"><button onClick={startPlannedWorkout}>Start Planned Workout</button><button className="secondary-button" onClick={() => setPage("programs")}>View Program</button><button className="secondary-button danger" onClick={skipPlanned}>Skip Planned Workout</button></div>

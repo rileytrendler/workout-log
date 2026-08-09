@@ -77,10 +77,17 @@ export async function importJsonBackup(file: File) {
     throw new Error("This does not look like a valid workout log backup file.");
   }
 
-  const importedWorkouts = (parsed.data.workouts ?? []).map((workout) => ({
-    ...(workout as Record<string, unknown>),
-    status: (workout as Record<string, unknown>).status ?? "completed"
-  }));
+  const importedWorkouts = (parsed.data.workouts ?? []).map((workout) => {
+    const copy: Record<string, unknown> = {
+      ...(workout as Record<string, unknown>),
+      status: (workout as Record<string, unknown>).status ?? "completed"
+    };
+    if (copy.programCycleNumber !== undefined &&
+      (!Number.isInteger(copy.programCycleNumber) || Number(copy.programCycleNumber) < 1)) {
+      throw new Error("The backup contains an invalid Workout Program cycle snapshot.");
+    }
+    return copy;
+  });
   const cleanTechnique = (row: unknown, field: string, allowNull = false) => {
     const copy = { ...(row as Record<string, unknown>) };
     const value = copy[field];
@@ -221,7 +228,14 @@ export async function importJsonBackup(file: File) {
   if (importedWorkouts.filter((workout) => workout.status === "active").length > 1) {
     throw new Error("This backup contains more than one active workout and cannot be imported safely.");
   }
-  const importedActiveProgramStates = parsed.data.activeProgramStates ?? [];
+  const importedActiveProgramStates = (parsed.data.activeProgramStates ?? []).map(row => {
+    const copy = { ...(row as Record<string, unknown>) };
+    if (copy.cycleNumber === undefined) copy.cycleNumber = 1;
+    if (!Number.isInteger(copy.cycleNumber) || Number(copy.cycleNumber) < 1) {
+      throw new Error("The backup contains an invalid active Program cycle.");
+    }
+    return copy;
+  });
   if (importedActiveProgramStates.length > 1) throw new Error("This backup contains more than one active Program and cannot be imported safely.");
   if (importedActiveProgramStates.length) {
     const state = importedActiveProgramStates[0] as Record<string, unknown>;
@@ -362,6 +376,7 @@ export async function downloadSetsCsv() {
       "workoutStatus",
       "workoutCompletedAt",
       "programName",
+      "programCycle",
       "programWeek",
       "programWorkout",
       "exerciseName",
@@ -426,6 +441,7 @@ export async function downloadSetsCsv() {
       workout?.status ?? "completed",
       workout?.completedAt,
       workout?.programNameSnapshot,
+      workout?.programCycleNumber,
       workout?.programWeekLabelSnapshot,
       workout?.programWorkoutNameSnapshot,
       exercise?.name,
