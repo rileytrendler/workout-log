@@ -105,8 +105,17 @@ export function runBackupValidationFixtures() {
   ]) delete legacyData[collection];
   delete legacyData.workouts[0].status;
   delete legacyData.exercises[0].measurementType;
+  delete legacyData.exercises[0].loadEntryMode;
   legacyData.workoutSets[0].reps = 10;
   assert(errors(legacy).length === 0, "version 1 omissions and old failure shape should normalize");
+  const normalizedLegacy = normalizeBackup(legacy);
+  assert(normalizedLegacy.data.exercises[0].loadEntryMode === "standard", "legacy Exercise mode should normalize to standard");
+
+  const mismatchedExpression = clone(current);
+  mismatchedExpression.data.exercises[0].loadEntryMode = "expression";
+  mismatchedExpression.data.workoutSets[0].loadExpression = "7x45+25";
+  mismatchedExpression.data.workoutSets[0].weight = 300;
+  assertRejected(mismatchedExpression, "does not match weight 300");
 
   const duplicateId = clone(current);
   duplicateId.data.workoutSets.push({ ...duplicateId.data.workoutSets[0] });
@@ -153,7 +162,7 @@ export function runBackupValidationFixtures() {
   assertRejected(incompleteV2, "missing required workoutSetMyoSets collection");
 
   assert(BACKUP_COLLECTIONS.every((collection) => Object.hasOwn(current.data, collection)), "fixture/export shape includes every persisted collection");
-  console.info("Backup validation fixtures passed (12 scenarios).");
+  console.info("Backup validation fixtures passed.");
 }
 
 runBackupValidationFixtures();

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db/db";
-import type { ExerciseMeasurementType, Gym, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
+import type { Exercise, Gym, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
 import { intensityTechniqueLabel } from "./utils/intensityTechniques";
 import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
 import { formatActualTechniqueDetails, formatSetPerformance } from "./utils/setFormatting";
+import { getExerciseLoadEntryMode, parseLoadExpression } from "./utils/loadFormatting";
 import { encodeRepResult, findFinalWorkingSet } from "./utils/failureSemantics";
 import { ActualTechniqueEditor, ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
@@ -151,13 +152,17 @@ function programSource(workout?: Workout) {
   return [workout?.programNameSnapshot, workout?.programCycleNumber ? `Cycle ${workout.programCycleNumber}` : undefined, workout?.programWeekLabelSnapshot, workout?.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
 }
 
-function HistoricalSetEditor({ set, measurementType, advancedTechnique, onClose }: {
+function HistoricalSetEditor({ set, exercise, advancedTechnique, onClose }: {
   set: WorkoutSet;
-  measurementType: ExerciseMeasurementType;
+  exercise: Exercise;
   advancedTechnique?: WorkoutExercise["actualLastSetIntensityTechnique"];
   onClose: () => void;
 }) {
-  const [weight, setWeight] = useState(set.weight?.toString() ?? "");
+  const measurementType = exercise.measurementType ?? "weight_reps";
+  const loadEntryMode = measurementType === "weight_reps"
+    ? getExerciseLoadEntryMode(exercise) : "standard";
+  const [weight, setWeight] = useState(loadEntryMode === "expression" && set.loadExpression
+    ? set.loadExpression : set.weight?.toString() ?? "");
   const [reps, setReps] = useState(String(set.failedOnRep ?? set.reps ?? ""));
   const [failed, setFailed] = useState(set.failedOnRep !== undefined);
   const [rpe, setRpe] = useState(set.actualRpe?.toString() ?? "");
@@ -172,7 +177,11 @@ function HistoricalSetEditor({ set, measurementType, advancedTechnique, onClose 
       alert(failed ? "A failed set needs an attempted rep of at least 1." : "Enter at least one completed rep.");
       return;
     }
-    const parsedWeight = measurementType === "reps_only" ? 0 : weight.trim() === "" && measurementType === "bodyweight_added_weight" ? 0 : Number(weight);
+    const expressionResult = loadEntryMode === "expression" && measurementType === "weight_reps"
+      ? parseLoadExpression(weight) : undefined;
+    if (expressionResult && !expressionResult.valid) { alert(expressionResult.error); return; }
+    const parsedWeight = expressionResult?.valid ? expressionResult.value
+      : measurementType === "reps_only" ? 0 : weight.trim() === "" && measurementType === "bodyweight_added_weight" ? 0 : Number(weight);
     if (!Number.isFinite(parsedWeight)) { alert("Enter a valid weight."); return; }
     const actualRpe = failed ? 10 : rpe.trim() === "" ? undefined : Number(rpe);
     if (actualRpe !== undefined && (!Number.isFinite(actualRpe) || actualRpe < 0 || actualRpe > 10)) {
@@ -182,6 +191,7 @@ function HistoricalSetEditor({ set, measurementType, advancedTechnique, onClose 
       const stored = encodeRepResult(enteredReps, failed);
       await updateHistoricalSet(set.id, {
         weight: parsedWeight,
+        loadExpression: expressionResult?.valid ? expressionResult.expression : undefined,
         ...stored,
         actualRpe,
         notes
@@ -191,8 +201,16 @@ function HistoricalSetEditor({ set, measurementType, advancedTechnique, onClose 
   }
 
   return <div className="historical-set-editor">
-    {measurementType !== "reps_only" && <input inputMode="decimal" type="number" value={weight}
-      onChange={(event) => setWeight(event.target.value)} placeholder={measurementType === "bodyweight_added_weight" ? "Added wt" : "Weight"} />}
+    {measurementType !== "reps_only" && <input inputMode={loadEntryMode === "expression" ? "text" : "decimal"}
+      type={loadEntryMode === "expression" ? "text" : "number"} value={weight}
+      onChange={(event) => setWeight(event.target.value)} placeholder={loadEntryMode === "expression" ? "7x45+25"
+        : loadEntryMode === "paired" ? "Weight each" : measurementType === "bodyweight_added_weight" ? "Added wt" : "Weight"} />}
+    {loadEntryMode === "expression" && weight && (() => {
+      const parsed = parseLoadExpression(weight);
+      return <small className={parsed.valid ? "muted" : "field-error"}>
+        {parsed.valid ? `= ${parsed.value} ${exercise.defaultUnit}` : parsed.error}
+      </small>;
+    })()}
     <input inputMode="numeric" type="number" min="1" value={reps}
       onChange={(event) => setReps(event.target.value)} placeholder="Reps" />
     <button type="button" className={`failure-toggle ${failed ? "active" : ""}`} aria-pressed={failed}
@@ -720,10 +738,10 @@ function App() {
     }
   }
 
-  function renderSetLine(set: WorkoutSet, measurementType: ExerciseMeasurementType, showFullDetails: boolean) {
+  function renderSetLine(set: WorkoutSet, exercise: Exercise, showFullDetails: boolean) {
     return (
       <>
-        <strong>Set {set.setNumber}:</strong> {formatSetPerformance(set, measurementType)}
+        <strong>Set {set.setNumber}:</strong> {formatSetPerformance(set, exercise.measurementType ?? "weight_reps", exercise)}
         <PersonalRecordBadge status={set.id === undefined ? undefined : personalRecordStatuses?.get(set.id)} />
         {showFullDetails && <> <span className="muted">({formatTime(getSetPerformedTime(set))})</span></>}
         {showFullDetails && set.notes && <p className="set-note">{set.notes}</p>}
@@ -1126,7 +1144,8 @@ function App() {
                         {selectedWorkoutExercises.map((historyWorkoutExercise) => {
                           const historyWorkoutExerciseId = historyWorkoutExercise.id;
                           const sets = historyWorkoutExerciseId ? getSetsForWorkoutExercise(historyWorkoutExerciseId, selectedWorkoutSets) : [];
-                          const measurementType = exercises?.find((exercise) => exercise.id === historyWorkoutExercise.exerciseId)?.measurementType ?? "weight_reps";
+                          const exercise = exercises?.find((candidate) => candidate.id === historyWorkoutExercise.exerciseId);
+                          const measurementType = exercise?.measurementType ?? "weight_reps";
                           const finalSet = findFinalWorkingSet(sets);
 
                           return (
@@ -1150,7 +1169,7 @@ function App() {
                                   {sets.map((set) => (
                                     <li key={set.id} className={fullWorkoutView ? "set-row" : ""}>
                                       <div>
-                                        {renderSetLine(set, measurementType, fullWorkoutView)}
+                                        {exercise ? renderSetLine(set, exercise, fullWorkoutView) : formatSetPerformance(set, measurementType)}
                                       </div>
                                       {set.id !== undefined && set.id === finalSet?.id &&
                                         <ActualTechniqueSummary workoutExercise={historyWorkoutExercise} finalSet={finalSet} />}
@@ -1161,7 +1180,7 @@ function App() {
                                           <button className="secondary-button" onClick={() => editSetPerformedTime(set)}>Edit Time</button>
                                           <button className="secondary-button danger" onClick={() => deleteSet(set)}>Delete</button>
                                         </div>
-                                        {set.id === editingHistoricalSetId && <HistoricalSetEditor set={set} measurementType={measurementType}
+                                        {set.id === editingHistoricalSetId && exercise && <HistoricalSetEditor set={set} exercise={exercise}
                                           advancedTechnique={set.id === finalSet?.id ? historyWorkoutExercise.actualLastSetIntensityTechnique : undefined}
                                           onClose={() => setEditingHistoricalSetId(null)} />}
                                         {set.id !== undefined && set.id === finalSet?.id &&

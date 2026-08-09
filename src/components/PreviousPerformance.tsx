@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
 import type { WorkoutSet } from "../db/types";
-import { formatReps } from "../utils/setFormatting";
+import { formatSetPerformance } from "../utils/setFormatting";
 import { getEffectiveReps } from "../utils/failureSemantics";
 
 type PreviousPerformanceProps = {
@@ -10,10 +10,6 @@ type PreviousPerformanceProps = {
   currentSets: WorkoutSet[];
 };
 
-
-function formatSet(set: WorkoutSet) {
-  return `${set.weight ?? "?"}×${formatReps(set)}`;
-}
 
 function compareNumber(current?: number, previous?: number, unit = "", pluralUnit = unit) {
   if (current === undefined || previous === undefined) return null;
@@ -84,6 +80,7 @@ export function PreviousPerformance({ workoutExerciseId, currentSets }: Previous
         .sortBy("setNumber");
 
       return {
+        exercise: await db.exercises.get(currentWorkoutExercise.exerciseId),
         workout: previous.workout,
         workoutExercise: previous.workoutExercise,
         sets: previousSets
@@ -133,8 +130,8 @@ export function PreviousPerformance({ workoutExerciseId, currentSets }: Previous
                 <span className="compact-set-label">Set {previousSet.setNumber}</span>
 
                 <span className="compact-set-values">
-                  {formatSet(previousSet)}
-                  {currentSet && <> → {formatSet(currentSet)}</>}
+                  {formatSetPerformance(previousSet, previousPerformance.exercise?.measurementType ?? "weight_reps", previousPerformance.exercise)}
+                  {currentSet && <> → {formatSetPerformance(currentSet, previousPerformance.exercise?.measurementType ?? "weight_reps", previousPerformance.exercise)}</>}
                 </span>
 
                 {currentSet ? (

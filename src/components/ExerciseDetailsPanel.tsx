@@ -4,7 +4,7 @@ import {
   getExerciseById,
   updateExerciseDetails
 } from "../data/exerciseRepository";
-import type { ExerciseMeasurementType } from "../db/types";
+import type { ExerciseLoadEntryMode, ExerciseMeasurementType } from "../db/types";
 
 type ExerciseDetailsPanelProps = {
   exerciseId: number;
@@ -21,6 +21,7 @@ export function ExerciseDetailsPanel({
   const [isEditing, setIsEditing] = useState(false);
   const [measurementType, setMeasurementType] =
     useState<ExerciseMeasurementType>("weight_reps");
+  const [loadEntryMode, setLoadEntryMode] = useState<ExerciseLoadEntryMode>("standard");
   const [setupNotes, setSetupNotes] = useState("");
   const [formCues, setFormCues] = useState("");
   const [generalNotes, setGeneralNotes] = useState("");
@@ -30,15 +31,18 @@ export function ExerciseDetailsPanel({
   useEffect(() => {
     if (!exercise) return;
 
+    /* eslint-disable react-hooks/set-state-in-effect -- reset the controlled editor when its async Exercise changes */
     setMeasurementType(
       exercise.measurementType ?? "weight_reps"
     );
+    setLoadEntryMode(exercise.loadEntryMode ?? "standard");
     setSetupNotes(exercise.setupNotes ?? "");
     setFormCues(exercise.formCues ?? "");
     setGeneralNotes(exercise.generalNotes ?? "");
     setDefaultRestSeconds(
       exercise.defaultRestSeconds?.toString() ?? ""
     );
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [exercise]);
 
   async function saveDetails() {
@@ -60,6 +64,7 @@ export function ExerciseDetailsPanel({
 
     await updateExerciseDetails(exerciseId, {
       measurementType,
+      loadEntryMode,
       setupNotes,
       formCues,
       generalNotes,
@@ -106,6 +111,10 @@ export function ExerciseDetailsPanel({
           </p>
         )}
 
+        <p><strong>Load entry:</strong>{" "}
+          {loadEntryMode === "paired" ? "Paired dumbbells" : loadEntryMode === "expression" ? "Expression" : "Standard"}
+        </p>
+
         {!hasDetails && (
           <p className="muted">
             No persistent setup or form information.
@@ -144,6 +153,20 @@ export function ExerciseDetailsPanel({
             Bodyweight + Added Weight
           </option>
         </select>
+      </label>
+
+      <label className="field-label">
+        Load Entry
+        <select value={loadEntryMode} onChange={(event) => setLoadEntryMode(event.target.value as ExerciseLoadEntryMode)}>
+          <option value="standard">Standard</option>
+          <option value="paired">Paired / per dumbbell</option>
+          <option value="expression">Expression</option>
+        </select>
+        <small className="muted">
+          {loadEntryMode === "paired" ? "Enter the weight of one dumbbell. Example: 90 lb each."
+            : loadEntryMode === "expression" ? "Enter a load expression such as 7x45+25."
+              : "Enter the weight shown on the machine or bar."}
+        </small>
       </label>
 
       <label className="field-label">

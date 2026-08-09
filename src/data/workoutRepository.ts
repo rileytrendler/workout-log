@@ -482,6 +482,7 @@ export async function getExerciseComparisons(
 
 export type SetPerformanceInput = {
   weight?: number;
+  loadExpression?: string;
   reps: number;
   failedOnRep?: number;
   actualRpe?: number;
@@ -533,6 +534,7 @@ export async function saveSetPerformance(
       async () => {
         await db.workoutSets.update(existingSet.id!, {
           weight: input.weight,
+          loadExpression: input.loadExpression,
           reps: input.reps,
           failedOnRep: input.failedOnRep,
           isFailure: input.failedOnRep !== undefined,
@@ -562,6 +564,7 @@ export async function saveSetPerformance(
         workoutExerciseId,
         setNumber,
         weight: input.weight,
+        loadExpression: input.loadExpression,
         reps: input.reps,
         failedOnRep: input.failedOnRep,
         isFailure: input.failedOnRep !== undefined,
@@ -597,6 +600,7 @@ export async function updateSetNote(
 
 export type HistoricalSetChanges = {
   weight: number;
+  loadExpression?: string;
   reps: number;
   failedOnRep?: number;
   actualRpe?: number;
@@ -611,7 +615,8 @@ export async function updateHistoricalSet(
   if (!set) throw new Error("Set could not be found.");
   validateFailure(changes.reps, changes.failedOnRep, changes.actualRpe);
   await db.transaction("rw", db.workoutSets, db.workoutExercises, db.workoutSetMyoSets, async () => {
-    await db.workoutSets.update(setId, { weight: changes.weight, reps: changes.reps, actualRpe: changes.actualRpe,
+    await db.workoutSets.update(setId, { weight: changes.weight, loadExpression: changes.loadExpression,
+      reps: changes.reps, actualRpe: changes.actualRpe,
       failedOnRep: changes.failedOnRep, isFailure: changes.failedOnRep !== undefined,
       notes: changes.notes?.trim() || undefined, updatedAt: nowString() });
     await revalidateActualLastSetTechnique(set.workoutExerciseId, setId);

@@ -1,16 +1,22 @@
 import type {
   ExerciseMeasurementType,
+  Exercise,
   WorkoutExercise,
   WorkoutSet,
   WorkoutSetMyoSet
 } from "../db/types";
 import { intensityTechniqueLabel } from "./intensityTechniques";
+import { formatSetLoad } from "./loadFormatting";
 
 export function formatReps(set: Pick<WorkoutSet, "reps" | "failedOnRep">): string {
   return set.failedOnRep === undefined ? String(set.reps ?? "?") : `${set.failedOnRep}f`;
 }
 
-export function formatSetPerformance(set: WorkoutSet, type: ExerciseMeasurementType): string {
+export function formatSetPerformance(
+  set: WorkoutSet,
+  type: ExerciseMeasurementType,
+  exercise?: Pick<Exercise, "loadEntryMode" | "defaultUnit">
+): string {
   const reps = formatReps(set);
   const rpe = set.actualRpe === undefined ? "" : ` @ ${set.actualRpe}`;
   if (type === "reps_only") return `${reps}${rpe}`;
@@ -18,7 +24,7 @@ export function formatSetPerformance(set: WorkoutSet, type: ExerciseMeasurementT
     const prefix = set.weight ? `Bodyweight + ${set.weight}` : "Bodyweight";
     return `${prefix} × ${reps}${rpe}`;
   }
-  return `${set.weight ?? "?"} × ${reps}${rpe}`;
+  return `${formatSetLoad(set, exercise)} × ${reps}${rpe}`;
 }
 
 export function formatActualTechniqueDetails(

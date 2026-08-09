@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import type { Gym, WorkoutExercise, WorkoutSet } from "../db/types";
+import type { Exercise, Gym, WorkoutExercise, WorkoutSet } from "../db/types";
 import { getExerciseHistory, getMyoSets, type PriorExercisePerformance } from "../data/workoutRepository";
 import { ExerciseDetailsPanel } from "./ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./ExerciseGymProfilePanel";
@@ -27,14 +27,14 @@ function measurementLabel(type?: string) {
   return type === "reps_only" ? "Reps only" : type === "bodyweight_added_weight" ? "Bodyweight + added weight" : "Weight + reps";
 }
 
-function setText(set: WorkoutSet, type?: string) {
-  return formatSetPerformance(set, (type ?? "weight_reps") as "weight_reps" | "reps_only" | "bodyweight_added_weight");
+function setText(set: WorkoutSet, type: string | undefined, exercise: Exercise) {
+  return formatSetPerformance(set, (type ?? "weight_reps") as "weight_reps" | "reps_only" | "bodyweight_added_weight", exercise);
 }
 
-function Performance({ title, performance, type }: { title: string; performance?: PriorExercisePerformance; type?: string }) {
+function Performance({ title, performance, type, exercise }: { title: string; performance?: PriorExercisePerformance; type?: string; exercise: Exercise }) {
   return <div className="history-summary-block"><strong>{title}</strong>{performance ? <>
     <span>{performance.workout.date}{performance.gymName ? ` · ${performance.gymName}` : ""}</span>
-    <span>{performance.sets.map((set) => `Set ${set.setNumber}: ${setText(set, type)}`).join(" · ")}</span>
+    <span>{performance.sets.map((set) => `Set ${set.setNumber}: ${setText(set, type, exercise)}`).join(" · ")}</span>
   </> : <span className="muted">None found</span>}</div>;
 }
 
@@ -72,14 +72,14 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
       <ExerciseGymProfilePanel exerciseId={exerciseId} gymId={gymId} gymName={selectedGym?.name ?? "Unknown gym"} />}
     <Suspense fallback={<div className="card"><p className="muted">Loading progress chart…</p></div>}>
       <ExerciseProgressChart key={exerciseId} sessions={result.sessions} measurementType={type}
-        unit={result.exercise.defaultUnit} personalRecordStatuses={personalRecordStatuses} />
+        exercise={result.exercise} personalRecordStatuses={personalRecordStatuses} />
     </Suspense>
     <div className="exercise-history-summaries">
-      <Performance title="Latest anywhere" performance={result.latestAnywhere} type={type} />
-      {gymId !== undefined && <Performance title={`Last at ${selectedGym?.name ?? "selected gym"}`} performance={result.lastAtSelectedGym} type={type} />}
+      <Performance title="Latest anywhere" performance={result.latestAnywhere} type={type} exercise={result.exercise} />
+      {gymId !== undefined && <Performance title={`Last at ${selectedGym?.name ?? "selected gym"}`} performance={result.lastAtSelectedGym} type={type} exercise={result.exercise} />}
       <div className="history-summary-block"><strong>Best by set number</strong>
         {Object.keys(result.bestBySetNumber).length ? Object.entries(result.bestBySetNumber).map(([number, reference]) =>
-          <span key={number}>Set {number}: {setText(reference.set, type)} <span className="muted">· {reference.workout.date}</span></span>) : <span className="muted">None found</span>}
+          <span key={number}>Set {number}: {setText(reference.set, type, result.exercise)} <span className="muted">· {reference.workout.date}</span></span>) : <span className="muted">None found</span>}
       </div>
     </div>
     <h3>Prior sessions</h3>
@@ -98,7 +98,7 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
             <p className="substitution-note">Substituted for {session.workoutExercise.prescribedExerciseNameSnapshot}</p>}
           <ol className="exercise-history-set-list">{session.sets.map((set) => {
             const status = set.id === undefined ? undefined : personalRecordStatuses?.get(set.id);
-            return <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}
+            return <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type, result.exercise)}
               <PersonalRecordBadge status={status} /></span>
             {set.performedAt && <span className="muted">{new Date(set.performedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
             {set.notes && <p className="set-note">{set.notes}</p>}

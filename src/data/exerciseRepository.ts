@@ -1,5 +1,5 @@
 import { db } from "../db/db";
-import type { Exercise, ExerciseMeasurementType } from "../db/types";
+import type { Exercise, ExerciseLoadEntryMode, ExerciseMeasurementType } from "../db/types";
 
 function nowString() {
   return new Date().toISOString();
@@ -85,6 +85,7 @@ export async function deleteExercises(exerciseIds: number[]): Promise<void> {
 
 export type ExerciseDetailChanges = {
   measurementType: ExerciseMeasurementType;
+  loadEntryMode: ExerciseLoadEntryMode;
   setupNotes?: string;
   formCues?: string;
   generalNotes?: string;
@@ -103,6 +104,7 @@ export async function updateExerciseDetails(
 ): Promise<void> {
   await db.exercises.update(exerciseId, {
     measurementType: changes.measurementType,
+    loadEntryMode: changes.loadEntryMode,
     setupNotes: changes.setupNotes?.trim() || undefined,
     formCues: changes.formCues?.trim() || undefined,
     generalNotes: changes.generalNotes?.trim() || undefined,

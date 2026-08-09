@@ -24,6 +24,7 @@ import type {
 } from "../db/types";
 import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
 import { formatSetPerformance } from "../utils/setFormatting";
+import { getExerciseLoadEntryMode, parseLoadExpression } from "../utils/loadFormatting";
 import { encodeRepResult, findFinalWorkingSet, getEffectiveReps } from "../utils/failureSemantics";
 import type { PersonalRecordStatus } from "../utils/personalRecords";
 import { PersonalRecordBadge } from "./PersonalRecordBadge";
@@ -144,6 +145,8 @@ export function ExerciseSetRows({
 
   const measurementType =
     context?.exercise.measurementType ?? "weight_reps";
+  const loadEntryMode = measurementType === "weight_reps"
+    ? getExerciseLoadEntryMode(context?.exercise) : "standard";
   const primaryPerformance =
     comparisons?.lastAtCurrentGym ?? comparisons?.latestAnywhere;
 
@@ -201,7 +204,9 @@ export function ExerciseSetRows({
   function getDraft(setNumber: number): SetDraft {
     const currentSet = getCurrentSet(setNumber);
 
-    const storedWeight =
+    const storedWeight = loadEntryMode === "expression" && currentSet?.loadExpression
+      ? currentSet.loadExpression
+      :
       currentSet?.weight === 0 &&
       measurementType !== "weight_reps"
         ? ""
@@ -234,8 +239,15 @@ export function ExerciseSetRows({
     }
 
     let weight: number | undefined;
+    let loadExpression: string | undefined;
 
     if (usesRequiredWeight(measurementType)) {
+      if (loadEntryMode === "expression") {
+        const parsed = parseLoadExpression(draft.weight);
+        if (!parsed.valid) return;
+        weight = parsed.value;
+        loadExpression = parsed.expression;
+      } else {
       if (
         !draft.weight ||
         Number.isNaN(Number(draft.weight))
@@ -244,6 +256,7 @@ export function ExerciseSetRows({
       }
 
       weight = Number(draft.weight);
+      }
     } else if (
       measurementType === "bodyweight_added_weight"
     ) {
@@ -294,6 +307,7 @@ export function ExerciseSetRows({
         setNumber,
         {
           weight,
+          loadExpression,
           ...repResult,
           actualRpe
         }
@@ -409,23 +423,30 @@ export function ExerciseSetRows({
                 ? undefined : personalRecordStatuses?.get(currentSet.id)} /></strong>
 
               {displaysWeightInput(measurementType) && (
-                <input
-                  inputMode="decimal"
-                  value={draft.weight}
-                  onChange={(event) =>
-                    updateDraft(
-                      setNumber,
-                      "weight",
-                      event.target.value
-                    )
-                  }
-                  onBlur={() =>
-                    savePerformanceIfReady(setNumber)
-                  }
-                  placeholder={weightPlaceholder(
-                    measurementType
-                  )}
-                />
+                <div className="load-entry-field">
+                  <input
+                    inputMode={loadEntryMode === "expression" ? "text" : "decimal"}
+                    value={draft.weight}
+                    onChange={(event) =>
+                      updateDraft(
+                        setNumber,
+                        "weight",
+                        event.target.value
+                      )
+                    }
+                    onBlur={() =>
+                      savePerformanceIfReady(setNumber)
+                    }
+                    placeholder={loadEntryMode === "expression" ? "7x45+25"
+                      : loadEntryMode === "paired" ? "Weight each" : weightPlaceholder(measurementType)}
+                  />
+                  {measurementType === "weight_reps" && loadEntryMode === "expression" && draft.weight && (() => {
+                    const parsed = parseLoadExpression(draft.weight);
+                    return parsed.valid
+                      ? <small className="muted load-expression-result">= {parsed.value} {context?.exercise.defaultUnit}</small>
+                      : <small className="field-error load-expression-result">{parsed.error}</small>;
+                  })()}
+                </div>
               )}
 
               <input
@@ -481,7 +502,7 @@ export function ExerciseSetRows({
                     {referenceRows.map(({ labels, reference }) => (
                       <div key={reference.set.id ?? `${reference.workout.id}-${setNumber}`}>
                         <strong>{labels.join(" / ")}:</strong>{" "}
-                        {formatSetPerformance(reference.set, measurementType)}
+                        {formatSetPerformance(reference.set, measurementType, context?.exercise)}
                       </div>
                     ))}
 

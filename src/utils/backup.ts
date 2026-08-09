@@ -2,6 +2,7 @@ import { db } from "../db/db";
 import { formatReps } from "./setFormatting";
 import { getEffectiveReps } from "./failureSemantics";
 import { derivePersonalRecordStatuses } from "./personalRecords";
+import { formatSetLoad, getExerciseLoadEntryMode, getTotalExternalLoad } from "./loadFormatting";
 import {
   BACKUP_COLLECTIONS,
   CURRENT_BACKUP_VERSION,
@@ -245,6 +246,7 @@ export async function downloadSetsCsv() {
       "programWeek",
       "programWorkout",
       "exerciseName",
+      "loadEntryMode",
       "prescribedExercise",
       "wasSubstituted",
       "exerciseNotes",
@@ -253,6 +255,9 @@ export async function downloadSetsCsv() {
       "actualLastSetIntensityTechnique",
       "setNumber",
       "weight",
+      "loadExpression",
+      "displayWeight",
+      "totalExternalLoad",
       "repsCompleted",
       "failedOnRep",
       "effectiveReps",
@@ -314,6 +319,7 @@ export async function downloadSetsCsv() {
       workout?.programWeekLabelSnapshot,
       workout?.programWorkoutNameSnapshot,
       exercise?.name,
+      getExerciseLoadEntryMode(exercise),
       workoutExercise?.prescribedExerciseNameSnapshot ?? exercise?.name,
       workoutExercise?.prescribedExerciseId !== undefined && workoutExercise.exerciseId !== workoutExercise.prescribedExerciseId,
       workoutExercise?.notes,
@@ -322,6 +328,9 @@ export async function downloadSetsCsv() {
       set.isWarmup !== true && set.setNumber === finalWorkingSetNumber ? workoutExercise?.actualLastSetIntensityTechnique : undefined,
       set.setNumber,
       set.weight,
+      set.loadExpression,
+      formatSetLoad(set, exercise),
+      exercise ? getTotalExternalLoad(exercise, set) : set.weight,
       set.reps,
       set.failedOnRep,
       getEffectiveReps(set),

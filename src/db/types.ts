@@ -3,6 +3,8 @@ export type ExerciseMeasurementType =
   | "reps_only"
   | "bodyweight_added_weight";
 
+export type ExerciseLoadEntryMode = "standard" | "paired" | "expression";
+
 export type LastSetIntensityTechnique = "failure" | "failure_llps" | "myo_reps";
 
 export type WorkoutExerciseQualityFlag =
@@ -24,6 +26,8 @@ export type Exercise = {
   category?: string;
   defaultUnit: "lb" | "kg";
   measurementType?: ExerciseMeasurementType;
+  /** Defaults to standard when omitted for legacy Exercises. */
+  loadEntryMode?: ExerciseLoadEntryMode;
   setupNotes?: string;
   formCues?: string;
   generalNotes?: string;
@@ -100,6 +104,8 @@ export type WorkoutSet = {
   workoutExerciseId: number;
   setNumber: number;
   weight?: number;
+  /** Original expression entered for an expression-mode Exercise. */
+  loadExpression?: string;
   reps?: number;
   /** Attempted rep that was not completed. When set, equals reps + 1. */
   failedOnRep?: number;

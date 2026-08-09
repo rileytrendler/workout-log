@@ -1,6 +1,7 @@
 import { isLastSetIntensityTechnique } from "./intensityTechniques";
 import { validateStoredRepResult } from "./failureSemantics";
 import { isWorkoutExerciseQualityFlag } from "./qualityFlags";
+import { EXERCISE_LOAD_ENTRY_MODES, loadExpressionMatchesWeight, parseLoadExpression } from "./loadFormatting";
 
 export const CURRENT_BACKUP_VERSION = 2 as const;
 export const SUPPORTED_BACKUP_VERSIONS = [1, CURRENT_BACKUP_VERSION] as const;
@@ -103,6 +104,7 @@ export function normalizeBackup(value: unknown): NormalizedWorkoutLogBackup {
 
   for (const exercise of data.exercises) {
     if (exercise.measurementType === undefined) exercise.measurementType = "weight_reps";
+    if (exercise.loadEntryMode === undefined) exercise.loadEntryMode = "standard";
   }
   for (const workout of data.workouts) {
     if (workout.status === undefined) workout.status = "completed";
@@ -272,6 +274,17 @@ function validateWorkoutSets(context: ValidationContext) {
     optionalFinite(context, "workoutSets", row, "actualRpe", { min: 0, max: 10 });
     optionalFinite(context, "workoutSets", row, "rir", { min: 0 });
     optionalFinite(context, "workoutSets", row, "weight");
+    if (row.loadExpression !== undefined) {
+      if (typeof row.loadExpression !== "string") {
+        addError(context, "workoutSets", row, "loadExpression must be a string when present");
+      } else {
+        const parsed = parseLoadExpression(row.loadExpression);
+        if (!parsed.valid) addError(context, "workoutSets", row, `loadExpression is invalid: ${parsed.error}`);
+        else if (typeof row.weight !== "number" || !loadExpressionMatchesWeight(row.loadExpression, row.weight)) {
+          addError(context, "workoutSets", row, `loadExpression evaluates to ${parsed.value}, which does not match weight ${String(row.weight)}`);
+        }
+      }
+    }
     const repError = validateStoredRepResult(row, true);
     if (repError) addError(context, "workoutSets", row, repError);
     if (row.isFailure !== undefined && row.isFailure !== (row.failedOnRep !== undefined)) {
@@ -365,6 +378,9 @@ export function validateBackup(backup: NormalizedWorkoutLogBackup): BackupValida
     if (row.defaultUnit !== "lb" && row.defaultUnit !== "kg") addError(context, "exercises", row, "defaultUnit must be lb or kg");
     if (!["weight_reps", "reps_only", "bodyweight_added_weight"].includes(String(row.measurementType))) {
       addError(context, "exercises", row, `measurementType has unsupported value ${String(row.measurementType)}`);
+    }
+    if (!EXERCISE_LOAD_ENTRY_MODES.includes(String(row.loadEntryMode) as typeof EXERCISE_LOAD_ENTRY_MODES[number])) {
+      addError(context, "exercises", row, `loadEntryMode has unsupported value ${String(row.loadEntryMode)}`);
     }
     optionalFinite(context, "exercises", row, "defaultRestSeconds", { min: 0 });
   }

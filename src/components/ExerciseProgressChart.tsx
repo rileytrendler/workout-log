@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import type { ExerciseMeasurementType } from "../db/types";
+import type { Exercise, ExerciseMeasurementType } from "../db/types";
 import type { ExerciseHistorySession } from "../data/workoutRepository";
-import { formatReps } from "../utils/setFormatting";
+import { formatSetPerformance } from "../utils/setFormatting";
 import type { PersonalRecordStatus } from "../utils/personalRecords";
 import {
   buildExerciseProgressSeries,
@@ -16,7 +16,7 @@ import {
 type Props = {
   sessions: ExerciseHistorySession[];
   measurementType: ExerciseMeasurementType;
-  unit: "lb" | "kg";
+  exercise: Exercise;
   personalRecordStatuses?: ReadonlyMap<number, PersonalRecordStatus>;
 };
 
@@ -38,22 +38,11 @@ function fullDate(date: string) {
     : date;
 }
 
-function performanceText(point: ExerciseProgressPoint, type: ExerciseMeasurementType, unit: "lb" | "kg") {
-  const reps = formatReps(point.set);
-  if (type === "reps_only") return reps;
-  if (type === "bodyweight_added_weight") {
-    return point.set.weight
-      ? `+${point.set.weight} ${unit} × ${reps}`
-      : `Bodyweight × ${reps}`;
-  }
-  return `${point.set.weight} ${unit} × ${reps}`;
-}
-
-function ProgressTooltip({ active, payload, measurementType, unit, metric }: {
+function ProgressTooltip({ active, payload, measurementType, exercise, metric }: {
   active?: boolean;
   payload?: Array<{ payload: ExerciseProgressPoint }>;
   measurementType: ExerciseMeasurementType;
-  unit: "lb" | "kg";
+  exercise: Exercise;
   metric: ExerciseProgressMetric;
 }) {
   const point = payload?.[0]?.payload;
@@ -63,7 +52,7 @@ function ProgressTooltip({ active, payload, measurementType, unit, metric }: {
     : point.recordStatus?.isSetPR ? "SET PR" : undefined;
   return <div className="progress-chart-tooltip">
     <strong>{fullDate(point.date)}</strong>
-    <span>{performanceText(point, measurementType, unit)}</span>
+    <span>{formatSetPerformance(point.set, measurementType, exercise)}</span>
     {metric !== "best" && <span className="muted">Set {point.set.setNumber}</span>}
     {point.set.actualRpe !== undefined && <span className="muted">RPE {point.set.actualRpe}</span>}
     {point.gymName && <span className="muted">{point.gymName}</span>}
@@ -71,7 +60,7 @@ function ProgressTooltip({ active, payload, measurementType, unit, metric }: {
   </div>;
 }
 
-export function ExerciseProgressChart({ sessions, measurementType, unit, personalRecordStatuses }: Props) {
+export function ExerciseProgressChart({ sessions, measurementType, exercise, personalRecordStatuses }: Props) {
   const [metric, setMetric] = useState<ExerciseProgressMetric>("best");
   const [range, setRange] = useState<ExerciseProgressRange>("all");
   const setNumbers = useMemo(
@@ -89,7 +78,7 @@ export function ExerciseProgressChart({ sessions, measurementType, unit, persona
     () => filterExerciseProgressRange(allPoints, range),
     [allPoints, range]
   );
-  const yLabel = measurementType === "reps_only" ? "Effective reps" : `Weight (${unit})`;
+  const yLabel = measurementType === "reps_only" ? "Effective reps" : `Weight (${exercise.defaultUnit})`;
   const xDomain = points.length === 1
     ? [points[0].chartTime - 43_200_000, points[0].chartTime + 43_200_000]
     : ["dataMin", "dataMax"];
@@ -121,7 +110,7 @@ export function ExerciseProgressChart({ sessions, measurementType, unit, persona
             <YAxis dataKey="value" domain={["auto", "auto"]} width={44}
               tick={{ fontSize: 11, fill: "var(--muted-text)" }}
               tickLine={false} axisLine={false} allowDecimals />
-            <Tooltip content={<ProgressTooltip measurementType={measurementType} unit={unit} metric={metric} />}
+            <Tooltip content={<ProgressTooltip measurementType={measurementType} exercise={exercise} metric={metric} />}
               cursor={{ stroke: "var(--accent)", strokeDasharray: "3 3" }} />
             <Line type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2.5}
               dot={{ r: 4, fill: "var(--surface)", strokeWidth: 2 }}
