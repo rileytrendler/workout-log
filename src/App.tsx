@@ -41,6 +41,7 @@ import {
   swapWorkoutExercise
 } from "./data/workoutRepository";
 import { PersonalRecordBadge } from "./components/PersonalRecordBadge";
+import { QualityFlagSummary, WorkoutExerciseQualityFlags } from "./components/WorkoutExerciseQualityFlags";
 import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
 import { getActiveProgramState, getPlannedProgramWorkout, skipPlannedWorkout, startPlannedProgramWorkout } from "./data/programRepository";
 
@@ -929,6 +930,13 @@ function App() {
                         )}
                       </div>
 
+                      {workoutExerciseId !== undefined && (
+                        <WorkoutExerciseQualityFlags
+                          workoutExerciseId={workoutExerciseId}
+                          flags={workoutExercise.qualityFlags}
+                        />
+                      )}
+
                       <ExerciseDetailsPanel
                         exerciseId={
                           workoutExercise.exerciseId
@@ -1112,10 +1120,15 @@ function App() {
 
                           return (
                             <div className={fullWorkoutView ? "mini-card full-history-card" : "mini-card"} key={historyWorkoutExercise.id}>
-                              <div className="exercise-history-card-heading"><div><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><SubstitutionNote workoutExercise={historyWorkoutExercise} /></div><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
+                              <div className="exercise-history-card-heading"><div><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><QualityFlagSummary flags={historyWorkoutExercise.qualityFlags} /><SubstitutionNote workoutExercise={historyWorkoutExercise} /></div><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
 
                               {fullWorkoutView && (
                                 <>
+                                  {historyWorkoutExerciseId !== undefined && <WorkoutExerciseQualityFlags
+                                    workoutExerciseId={historyWorkoutExerciseId}
+                                    flags={historyWorkoutExercise.qualityFlags}
+                                    showSummary={false}
+                                  />}
                                   <p className="muted">Started: {formatTime(historyWorkoutExercise.startedAt)}</p>
                                   {historyWorkoutExercise.notes && <p className="note-block">{historyWorkoutExercise.notes}</p>}
                                 </>

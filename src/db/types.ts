@@ -5,6 +5,12 @@ export type ExerciseMeasurementType =
 
 export type LastSetIntensityTechnique = "failure" | "failure_llps" | "myo_reps";
 
+export type WorkoutExerciseQualityFlag =
+  | "form_issue"
+  | "pain_discomfort"
+  | "setup_issue"
+  | "low_energy";
+
 export type Gym = {
   id?: number;
   name: string;
@@ -61,6 +67,7 @@ export type WorkoutExercise = {
   prescribedExerciseNameSnapshot?: string;
 
   notes?: string;
+  qualityFlags?: WorkoutExerciseQualityFlag[];
   startedAt?: string;
 
   plannedSetCount?: number;

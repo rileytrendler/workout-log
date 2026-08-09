@@ -8,6 +8,7 @@ import { formatActualTechniqueDetails, formatSetPerformance } from "../utils/set
 import { findFinalWorkingSet } from "../utils/failureSemantics";
 import type { PersonalRecordStatus } from "../utils/personalRecords";
 import { PersonalRecordBadge } from "./PersonalRecordBadge";
+import { QualityFlagSummary } from "./WorkoutExerciseQualityFlags";
 
 type Props = {
   exerciseId: number;
@@ -80,7 +81,8 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
         const finalSet = findFinalWorkingSet(session.sets);
         return <article className="mini-card exercise-history-session" key={session.workoutExercise.id}>
           <div className="exercise-history-session-heading"><div><strong>{session.workout.date} · {session.workout.title || "Untitled Workout"}</strong>
-            <p className="muted">{[session.gymName, source(session.workout), session.workout.status].filter(Boolean).join(" · ")}</p></div>
+            <p className="muted">{[session.gymName, source(session.workout), session.workout.status].filter(Boolean).join(" · ")}</p>
+            <QualityFlagSummary flags={session.workoutExercise.qualityFlags} /></div>
             {session.workout.id && <button className="secondary-button tiny-button" onClick={() => onOpenWorkout(session.workout.id!)}>Open Workout</button>}</div>
           {session.workoutExercise.notes && <p className="note-block">{session.workoutExercise.notes}</p>}
           {session.workoutExercise.prescribedExerciseId !== undefined &&

@@ -3,6 +3,7 @@ import { isLastSetIntensityTechnique } from "./intensityTechniques";
 import { formatReps } from "./setFormatting";
 import { getEffectiveReps, validateStoredRepResult } from "./failureSemantics";
 import { derivePersonalRecordStatuses } from "./personalRecords";
+import { validateWorkoutExerciseQualityFlags } from "./qualityFlags";
 
 export type WorkoutLogBackup = {
   exportedAt: string;
@@ -114,6 +115,9 @@ export async function importJsonBackup(file: File) {
   });
   const importedWorkoutExercises = (parsed.data.workoutExercises ?? []).map(row => {
     const copy = cleanTechnique(cleanTechnique(row, "plannedLastSetIntensityTechnique"), "actualLastSetIntensityTechnique");
+    const qualityFlags = validateWorkoutExerciseQualityFlags(copy.qualityFlags);
+    if (qualityFlags?.length) copy.qualityFlags = qualityFlags;
+    else delete copy.qualityFlags;
     if (copy.actualLastSetIntensityTechnique !== undefined) {
       const finalSet = importedSets
         .map(set => set as Record<string, unknown>)
@@ -385,6 +389,7 @@ export async function downloadSetsCsv() {
       "prescribedExercise",
       "wasSubstituted",
       "exerciseNotes",
+      "qualityFlags",
       "plannedLastSetIntensityTechnique",
       "actualLastSetIntensityTechnique",
       "setNumber",
@@ -453,6 +458,7 @@ export async function downloadSetsCsv() {
       workoutExercise?.prescribedExerciseNameSnapshot ?? exercise?.name,
       workoutExercise?.prescribedExerciseId !== undefined && workoutExercise.exerciseId !== workoutExercise.prescribedExerciseId,
       workoutExercise?.notes,
+      workoutExercise?.qualityFlags?.join("|"),
       workoutExercise?.plannedLastSetIntensityTechnique,
       set.isWarmup !== true && set.setNumber === finalWorkingSetNumber ? workoutExercise?.actualLastSetIntensityTechnique : undefined,
       set.setNumber,

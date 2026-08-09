@@ -6,6 +6,7 @@ import type {
   Gym,
   Workout,
   WorkoutExercise,
+  WorkoutExerciseQualityFlag,
   WorkoutSet,
   WorkoutSetMyoSet,
   WorkoutTemplateExercise
@@ -933,6 +934,27 @@ export async function updateWorkoutExerciseNotes(
       });
     }
   );
+}
+
+export async function updateWorkoutExerciseQualityFlags(
+  workoutExerciseId: number,
+  qualityFlags: WorkoutExerciseQualityFlag[]
+): Promise<void> {
+  const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+
+  if (!workoutExercise) {
+    throw new Error("Workout exercise could not be found.");
+  }
+
+  const now = nowString();
+
+  await db.transaction("rw", db.workoutExercises, db.workouts, async () => {
+    await db.workoutExercises.update(workoutExerciseId, {
+      qualityFlags: qualityFlags.length ? qualityFlags : undefined,
+      updatedAt: now
+    });
+    await db.workouts.update(workoutExercise.workoutId, { updatedAt: now });
+  });
 }
 
 export async function removeExerciseFromWorkout(
