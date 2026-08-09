@@ -3,6 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
 import type { WorkoutSet } from "../db/types";
 import { formatReps } from "../utils/setFormatting";
+import { getEffectiveReps } from "../utils/failureSemantics";
 
 type PreviousPerformanceProps = {
   workoutExerciseId: number;
@@ -14,17 +15,18 @@ function formatSet(set: WorkoutSet) {
   return `${set.weight ?? "?"}×${formatReps(set)}`;
 }
 
-function compareNumber(current?: number, previous?: number, unit = "") {
+function compareNumber(current?: number, previous?: number, unit = "", pluralUnit = unit) {
   if (current === undefined || previous === undefined) return null;
 
   const delta = current - previous;
+  const displayedUnit = Math.abs(delta) <= 1 ? unit : pluralUnit;
 
   if (delta > 0) {
-    return <span className="compare-up">+{delta}{unit}</span>;
+    return <span className="compare-up">+{delta}{displayedUnit}</span>;
   }
 
   if (delta < 0) {
-    return <span className="compare-down">{delta}{unit}</span>;
+    return <span className="compare-down">{delta}{displayedUnit}</span>;
   }
 
   return <span className="compare-same">same</span>;
@@ -139,7 +141,12 @@ export function PreviousPerformance({ workoutExerciseId, currentSets }: Previous
                   <span className="compact-comparison">
                     {compareNumber(currentSet.weight, previousSet.weight, " lb")}
                     <span className="comparison-separator">/</span>
-                    {compareNumber(currentSet.reps, previousSet.reps, " rep")}
+                    {compareNumber(
+                      getEffectiveReps(currentSet),
+                      getEffectiveReps(previousSet),
+                      " rep",
+                      " reps"
+                    )}
                   </span>
                 ) : (
                   <span className="muted">not entered</span>

@@ -42,14 +42,25 @@ export function isInCompletedRepRange(set: Pick<WorkoutSet, "reps">, min: number
   return set.reps !== undefined && set.reps >= min && set.reps <= max;
 }
 
+export function getEffectiveReps(
+  set: Pick<WorkoutSet, "reps" | "failedOnRep">
+): number | undefined {
+  if (set.reps === undefined) return undefined;
+  const hasValidFailure = typeof set.failedOnRep === "number" &&
+    Number.isInteger(set.failedOnRep) && set.failedOnRep >= 1 &&
+    set.failedOnRep === set.reps + 1;
+  return set.reps + (hasValidFailure ? 0.5 : 0);
+}
+
 export function compareBestSetPerformance(
-  a: Pick<WorkoutSet, "weight" | "reps">,
-  b: Pick<WorkoutSet, "weight" | "reps">,
+  a: Pick<WorkoutSet, "weight" | "reps" | "failedOnRep">,
+  b: Pick<WorkoutSet, "weight" | "reps" | "failedOnRep">,
   measurementType: ExerciseMeasurementType
 ) {
-  if (measurementType === "reps_only") return (b.reps ?? -1) - (a.reps ?? -1);
+  const effectiveRepsDifference = (getEffectiveReps(b) ?? -1) - (getEffectiveReps(a) ?? -1);
+  if (measurementType === "reps_only") return effectiveRepsDifference;
   return (b.weight ?? Number.NEGATIVE_INFINITY) - (a.weight ?? Number.NEGATIVE_INFINITY) ||
-    (b.reps ?? -1) - (a.reps ?? -1);
+    effectiveRepsDifference;
 }
 
 export function findFinalWorkingSet<T extends Pick<WorkoutSet, "isWarmup" | "setNumber">>(sets: T[]): T | undefined {

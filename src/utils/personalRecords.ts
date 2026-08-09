@@ -63,8 +63,8 @@ function isQualifyingSet(set: WorkoutSet, measurementType: ExerciseMeasurementTy
 }
 
 export function doesSetBeatPriorRecord(
-  set: Pick<WorkoutSet, "weight" | "reps">,
-  priorRecord: Pick<WorkoutSet, "weight" | "reps"> | undefined,
+  set: Pick<WorkoutSet, "weight" | "reps" | "failedOnRep">,
+  priorRecord: Pick<WorkoutSet, "weight" | "reps" | "failedOnRep"> | undefined,
   measurementType: ExerciseMeasurementType
 ) {
   return priorRecord === undefined || compareBestSetPerformance(set, priorRecord, measurementType) < 0;

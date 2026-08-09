@@ -1,7 +1,7 @@
 import { db } from "../db/db";
 import { isLastSetIntensityTechnique } from "./intensityTechniques";
 import { formatReps } from "./setFormatting";
-import { validateStoredRepResult } from "./failureSemantics";
+import { getEffectiveReps, validateStoredRepResult } from "./failureSemantics";
 import { derivePersonalRecordStatuses } from "./personalRecords";
 
 export type WorkoutLogBackup = {
@@ -391,6 +391,7 @@ export async function downloadSetsCsv() {
       "weight",
       "repsCompleted",
       "failedOnRep",
+      "effectiveReps",
       "repsDisplay",
       "actualRpe",
       "rir",
@@ -458,6 +459,7 @@ export async function downloadSetsCsv() {
       set.weight,
       set.reps,
       set.failedOnRep,
+      getEffectiveReps(set),
       formatReps(set),
       set.actualRpe,
       set.rir,

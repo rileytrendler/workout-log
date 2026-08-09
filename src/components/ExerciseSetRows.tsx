@@ -24,7 +24,7 @@ import type {
 } from "../db/types";
 import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
 import { formatSetPerformance } from "../utils/setFormatting";
-import { encodeRepResult, findFinalWorkingSet } from "../utils/failureSemantics";
+import { encodeRepResult, findFinalWorkingSet, getEffectiveReps } from "../utils/failureSemantics";
 import type { PersonalRecordStatus } from "../utils/personalRecords";
 import { PersonalRecordBadge } from "./PersonalRecordBadge";
 
@@ -59,7 +59,8 @@ function formatTime(value?: string) {
 function compareNumber(
   current?: number,
   previous?: number,
-  unit = ""
+  unit = "",
+  pluralUnit = unit
 ) {
   if (
     current === undefined ||
@@ -69,11 +70,12 @@ function compareNumber(
   }
 
   const delta = current - previous;
+  const displayedUnit = Math.abs(delta) <= 1 ? unit : pluralUnit;
 
   if (delta > 0) {
     return (
       <span className="compare-up">
-        +{delta}{unit}
+        +{delta}{displayedUnit}
       </span>
     );
   }
@@ -81,7 +83,7 @@ function compareNumber(
   if (delta < 0) {
     return (
       <span className="compare-down">
-        {delta}{unit}
+        {delta}{displayedUnit}
       </span>
     );
   }
@@ -497,9 +499,10 @@ export function ExerciseSetRows({
                             /
                           </span>
                           {compareNumber(
-                            currentSet.reps,
-                            previousSet.reps,
-                            " rep"
+                            getEffectiveReps(currentSet),
+                            getEffectiveReps(previousSet),
+                            " rep",
+                            " reps"
                           )}
                         </span>
                       )}
@@ -510,9 +513,10 @@ export function ExerciseSetRows({
                         "reps_only" && (
                         <span className="compact-comparison">
                           {compareNumber(
-                            currentSet.reps,
-                            previousSet.reps,
-                            " rep"
+                            getEffectiveReps(currentSet),
+                            getEffectiveReps(previousSet),
+                            " rep",
+                            " reps"
                           )}
                         </span>
                       )}
