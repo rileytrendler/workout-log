@@ -227,7 +227,7 @@ function App() {
   const [editingHistoricalSetId, setEditingHistoricalSetId] = useState<number | null>(null);
   const [exerciseName, setExerciseName] = useState("");
   const [newGymName, setNewGymName] = useState("");
-  const [exerciseHistory, setExerciseHistory] = useState<{ exerciseId: number; gymId?: number; from: "active" | "history" } | null>(null);
+  const [exerciseHistory, setExerciseHistory] = useState<{ exerciseId: number; gymId?: number; from: "active" | "history" | "programs" } | null>(null);
   const restTimer = useRestTimer();
   const { timer: activeRestTimer, dismiss: dismissRestTimer } = restTimer;
 
@@ -1199,7 +1199,8 @@ function App() {
       {!exerciseHistory && page === "progress" && <ProgressPage />}
 
       {!exerciseHistory && page === "programs" && (
-        <ProgramEditor exercises={exercises ?? []} onViewActive={() => setPage("active")} />
+        <ProgramEditor exercises={exercises ?? []} onViewActive={() => setPage("active")}
+          onViewExerciseHistory={(exerciseId) => setExerciseHistory({ exerciseId, from: "programs" })} />
       )}
 
       {!exerciseHistory && page === "settings" && (
