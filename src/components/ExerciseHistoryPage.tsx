@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { Gym, WorkoutExercise, WorkoutSet } from "../db/types";
 import { getExerciseHistory, getMyoSets, type PriorExercisePerformance } from "../data/workoutRepository";
@@ -9,6 +9,9 @@ import { findFinalWorkingSet } from "../utils/failureSemantics";
 import type { PersonalRecordStatus } from "../utils/personalRecords";
 import { PersonalRecordBadge } from "./PersonalRecordBadge";
 import { QualityFlagSummary } from "./WorkoutExerciseQualityFlags";
+
+const ExerciseProgressChart = lazy(() => import("./ExerciseProgressChart")
+  .then((module) => ({ default: module.ExerciseProgressChart })));
 
 type Props = {
   exerciseId: number;
@@ -67,6 +70,10 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
     </label>
     {gymId === undefined ? <p className="muted">Select a gym to view or edit its saved equipment setup.</p> :
       <ExerciseGymProfilePanel exerciseId={exerciseId} gymId={gymId} gymName={selectedGym?.name ?? "Unknown gym"} />}
+    <Suspense fallback={<div className="card"><p className="muted">Loading progress chart…</p></div>}>
+      <ExerciseProgressChart key={exerciseId} sessions={result.sessions} measurementType={type}
+        unit={result.exercise.defaultUnit} personalRecordStatuses={personalRecordStatuses} />
+    </Suspense>
     <div className="exercise-history-summaries">
       <Performance title="Latest anywhere" performance={result.latestAnywhere} type={type} />
       {gymId !== undefined && <Performance title={`Last at ${selectedGym?.name ?? "selected gym"}`} performance={result.lastAtSelectedGym} type={type} />}
