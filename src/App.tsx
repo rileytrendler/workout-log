@@ -382,8 +382,11 @@ function App() {
     if (!file) return;
 
     try {
-      await importJsonBackup(file);
-      alert("Backup imported successfully.");
+      const result = await importJsonBackup(file);
+      if (!result.imported) return;
+      alert(result.safetyBackupDownloadInitiated
+        ? "Backup imported successfully. The pre-import safety-backup download was initiated; check your browser downloads to confirm it was saved."
+        : "Backup imported successfully.");
       setSelectedWorkoutId(null);
       setFullWorkoutView(false);
       setPage("history");

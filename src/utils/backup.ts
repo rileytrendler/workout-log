@@ -1,39 +1,28 @@
 import { db } from "../db/db";
-import { isLastSetIntensityTechnique } from "./intensityTechniques";
 import { formatReps } from "./setFormatting";
-import { getEffectiveReps, validateStoredRepResult } from "./failureSemantics";
+import { getEffectiveReps } from "./failureSemantics";
 import { derivePersonalRecordStatuses } from "./personalRecords";
-import { validateWorkoutExerciseQualityFlags } from "./qualityFlags";
+import {
+  BACKUP_COLLECTIONS,
+  CURRENT_BACKUP_VERSION,
+  formatBackupValidationErrors,
+  normalizeBackup,
+  validateBackup,
+  type NormalizedWorkoutLogBackup
+} from "./backupValidation";
 
 export type WorkoutLogBackup = {
   exportedAt: string;
   appName: "workout-log";
-  backupVersion: 1;
-  data: {
-    gyms: unknown[];
-    exercises: unknown[];
-    exerciseGymProfiles?: unknown[];
-    workouts: unknown[];
-    workoutExercises: unknown[];
-    workoutSets: unknown[];
-    workoutTemplates: unknown[];
-    workoutTemplateExercises: unknown[];
-    workoutTemplateExerciseSubstitutions?: unknown[];
-    workoutExerciseSubstitutionOptions?: unknown[];
-    programs?: unknown[];
-    programWeeks?: unknown[];
-    programWorkouts?: unknown[];
-    programWorkoutExerciseOverrides?: unknown[];
-    activeProgramStates?: unknown[];
-    workoutSetMyoSets?: unknown[];
-  };
+  backupVersion: typeof CURRENT_BACKUP_VERSION;
+  data: Record<typeof BACKUP_COLLECTIONS[number], unknown[]>;
 };
 
 export async function createBackup(): Promise<WorkoutLogBackup> {
-  return {
+  return db.transaction("r", db.tables, async () => ({
     exportedAt: new Date().toISOString(),
-    appName: "workout-log",
-    backupVersion: 1,
+    appName: "workout-log" as const,
+    backupVersion: CURRENT_BACKUP_VERSION,
     data: {
       gyms: await db.gyms.toArray(),
       exercises: await db.exercises.toArray(),
@@ -41,240 +30,96 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
       workouts: await db.workouts.toArray(),
       workoutExercises: await db.workoutExercises.toArray(),
       workoutSets: await db.workoutSets.toArray(),
+      workoutSetMyoSets: await db.workoutSetMyoSets.toArray(),
       workoutTemplates: await db.workoutTemplates.toArray(),
-      workoutTemplateExercises:
-        await db.workoutTemplateExercises.toArray(),
+      workoutTemplateExercises: await db.workoutTemplateExercises.toArray(),
       workoutTemplateExerciseSubstitutions: await db.workoutTemplateExerciseSubstitutions.toArray(),
       workoutExerciseSubstitutionOptions: await db.workoutExerciseSubstitutionOptions.toArray(),
       programs: await db.programs.toArray(),
       programWeeks: await db.programWeeks.toArray(),
       programWorkouts: await db.programWorkouts.toArray(),
       programWorkoutExerciseOverrides: await db.programWorkoutExerciseOverrides.toArray(),
-      activeProgramStates: await db.activeProgramStates.toArray(),
-      workoutSetMyoSets: await db.workoutSetMyoSets.toArray()
+      activeProgramStates: await db.activeProgramStates.toArray()
     }
-  };
+  }));
+}
+
+function triggerBackupDownload(backup: WorkoutLogBackup, filename: string) {
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export async function downloadJsonBackup() {
   const backup = await createBackup();
-  const json = JSON.stringify(backup, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const date = new Date().toISOString().slice(0, 10);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `workout-log-backup-${date}.json`;
-  link.click();
-
-  URL.revokeObjectURL(url);
+  triggerBackupDownload(backup, `workout-log-backup-${new Date().toISOString().slice(0, 10)}.json`);
 }
 
-export async function importJsonBackup(file: File) {
-  const text = await file.text();
-  const parsed = JSON.parse(text) as WorkoutLogBackup;
+export type BackupImportCounts = {
+  workouts: number;
+  exerciseSessions: number;
+  sets: number;
+  programs: number;
+  templates: number;
+  gyms: number;
+};
 
-  if (parsed.appName !== "workout-log" || parsed.backupVersion !== 1) {
-    throw new Error("This does not look like a valid workout log backup file.");
+export type PreparedBackupImport = {
+  backup: NormalizedWorkoutLogBackup;
+  counts: BackupImportCounts;
+};
+
+export async function prepareJsonBackup(file: File): Promise<PreparedBackupImport> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (error) {
+    throw new Error(`The selected file is not valid JSON: ${error instanceof Error ? error.message : "parse failed"}`, { cause: error });
   }
-
-  const importedWorkouts = (parsed.data.workouts ?? []).map((workout) => {
-    const copy: Record<string, unknown> = {
-      ...(workout as Record<string, unknown>),
-      status: (workout as Record<string, unknown>).status ?? "completed"
-    };
-    if (copy.programCycleNumber !== undefined &&
-      (!Number.isInteger(copy.programCycleNumber) || Number(copy.programCycleNumber) < 1)) {
-      throw new Error("The backup contains an invalid Workout Program cycle snapshot.");
+  let backup: NormalizedWorkoutLogBackup;
+  try {
+    backup = normalizeBackup(parsed);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Backup normalization failed.", { cause: error });
+  }
+  const validation = validateBackup(backup);
+  if (!validation.valid) throw new Error(formatBackupValidationErrors(validation.errors));
+  return {
+    backup,
+    counts: {
+      workouts: backup.data.workouts.length,
+      exerciseSessions: backup.data.workoutExercises.length,
+      sets: backup.data.workoutSets.length,
+      programs: backup.data.programs.length,
+      templates: backup.data.workoutTemplates.length,
+      gyms: backup.data.gyms.length
     }
-    return copy;
-  });
-  const cleanTechnique = (row: unknown, field: string, allowNull = false) => {
-    const copy = { ...(row as Record<string, unknown>) };
-    const value = copy[field];
-    if (value !== undefined && !(allowNull && value === null) && !isLastSetIntensityTechnique(value)) delete copy[field];
-    return copy;
   };
-  const importedTemplateExercises = (parsed.data.workoutTemplateExercises ?? []).map(row => cleanTechnique(row, "plannedLastSetIntensityTechnique"));
-  const importedOverrides = (parsed.data.programWorkoutExerciseOverrides ?? []).map(row => cleanTechnique(row, "plannedLastSetIntensityTechnique", true));
-  const importedSets = (parsed.data.workoutSets ?? []).map((row, index) => {
-    const copy = { ...(row as Record<string, unknown>) };
-    if (typeof copy.failedOnRep === "number" && Number.isInteger(copy.failedOnRep) && copy.failedOnRep >= 1 &&
-      copy.reps === copy.failedOnRep && copy.actualRpe === 10) {
-      copy.reps = copy.failedOnRep - 1;
-      copy.isFailure = true;
-    }
-    if (copy.reps !== undefined || copy.failedOnRep !== undefined) {
-      const error = validateStoredRepResult(copy, true);
-      if (error) {
-        throw new Error(`The backup contains an invalid workout set (${String(copy.id ?? index + 1)}): ${error}.`);
-      }
-    }
-    return copy;
-  });
-  const importedWorkoutExercises = (parsed.data.workoutExercises ?? []).map(row => {
-    const copy = cleanTechnique(cleanTechnique(row, "plannedLastSetIntensityTechnique"), "actualLastSetIntensityTechnique");
-    const qualityFlags = validateWorkoutExerciseQualityFlags(copy.qualityFlags);
-    if (qualityFlags?.length) copy.qualityFlags = qualityFlags;
-    else delete copy.qualityFlags;
-    if (copy.actualLastSetIntensityTechnique !== undefined) {
-      const finalSet = importedSets
-        .map(set => set as Record<string, unknown>)
-        .filter(set => set.workoutExerciseId === copy.id && set.isWarmup !== true)
-        .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
-      if (!finalSet || finalSet.actualRpe !== 10) {
-        delete copy.actualLastSetIntensityTechnique;
-        delete copy.longLengthPartialReps;
-      }
-    }
-    if (copy.longLengthPartialReps !== undefined &&
-      (copy.actualLastSetIntensityTechnique !== "failure_llps" || !Number.isInteger(copy.longLengthPartialReps) || Number(copy.longLengthPartialReps) < 1)) {
-      throw new Error("The backup contains invalid long-length partial data.");
-    }
-    return copy;
-  });
-  const templateSubstitutionRows = (parsed.data.workoutTemplateExerciseSubstitutions ?? []) as Array<Record<string, unknown>>;
-  const workoutOptionRows = (parsed.data.workoutExerciseSubstitutionOptions ?? []) as Array<Record<string, unknown>>;
-  const exerciseRows = (parsed.data.exercises ?? []) as Array<Record<string, unknown>>;
-  const templateExerciseRows = importedTemplateExercises as Array<Record<string, unknown>>;
-  const exerciseIds = new Set(exerciseRows.map(row => row.id));
-  const templateExerciseById = new Map(templateExerciseRows.map(row => [row.id, row]));
-  const workoutExerciseIds = new Set(importedWorkoutExercises.map(row => row.id));
-  const importedWorkoutExerciseById = new Map(importedWorkoutExercises.map(row => [row.id, row]));
-  for (const row of importedWorkoutExercises) {
-    if (row.prescribedExerciseId !== undefined &&
-      (typeof row.prescribedExerciseNameSnapshot !== "string" || !row.prescribedExerciseNameSnapshot.trim())) {
-      throw new Error("The backup contains workout provenance without a prescribed exercise name snapshot.");
-    }
-  }
-  const templateOptionKeys = new Set<string>();
-  const templateOrders = new Map<unknown, number[]>();
-  for (const row of templateSubstitutionRows) {
-    const source = templateExerciseById.get(row.templateExerciseId);
-    const order = Number(row.order);
-    if (!source || !exerciseIds.has(row.substituteExerciseId) || source.exerciseId === row.substituteExerciseId || !Number.isInteger(order) || order < 1) {
-      throw new Error("The backup contains an invalid template exercise substitution.");
-    }
-    const key = `${String(row.templateExerciseId)}:${String(row.substituteExerciseId)}`;
-    if (templateOptionKeys.has(key)) throw new Error("The backup contains duplicate template exercise substitutions.");
-    templateOptionKeys.add(key);
-    templateOrders.set(row.templateExerciseId, [...(templateOrders.get(row.templateExerciseId) ?? []), order]);
-  }
-  for (const orders of templateOrders.values()) {
-    orders.sort((a, b) => a - b);
-    if (orders.some((order, index) => order !== index + 1)) throw new Error("Template substitution order must be contiguous.");
-  }
-  const workoutOptionKeys = new Set<string>();
-  const workoutOptionOrders = new Map<unknown, number[]>();
-  for (const row of workoutOptionRows) {
-    const order = Number(row.order);
-    const workoutExercise = importedWorkoutExerciseById.get(row.workoutExerciseId);
-    if (!workoutExerciseIds.has(row.workoutExerciseId) || !exerciseIds.has(row.exerciseId) ||
-      workoutExercise?.prescribedExerciseId === row.exerciseId ||
-      typeof row.exerciseNameSnapshot !== "string" || !row.exerciseNameSnapshot.trim() || !Number.isInteger(order) || order < 1) {
-      throw new Error("The backup contains an invalid workout substitution snapshot.");
-    }
-    const key = `${String(row.workoutExerciseId)}:${String(row.exerciseId)}`;
-    if (workoutOptionKeys.has(key)) throw new Error("The backup contains duplicate workout substitution choices.");
-    workoutOptionKeys.add(key);
-    workoutOptionOrders.set(row.workoutExerciseId, [...(workoutOptionOrders.get(row.workoutExerciseId) ?? []), order]);
-  }
-  for (const orders of workoutOptionOrders.values()) {
-    orders.sort((a, b) => a - b);
-    if (orders.some((order, index) => order !== index + 1)) throw new Error("Workout substitution choice order must be contiguous.");
-  }
-  const setIds = new Set(importedSets.map(row => row.id));
-  const setById = new Map(importedSets.map(row => [row.id, row]));
-  const workoutExerciseById = new Map(importedWorkoutExercises.map(row => [row.id, row]));
-  const myoRows = (parsed.data.workoutSetMyoSets ?? []) as Array<Record<string, unknown>>;
-  const myoByMainSet = new Map<unknown, Array<Record<string, unknown>>>();
-  for (const [index, row] of myoRows.entries()) {
-    if (typeof row.failedOnRep === "number" && Number.isInteger(row.failedOnRep) && row.failedOnRep >= 1 &&
-      row.reps === row.failedOnRep) {
-      row.reps = row.failedOnRep - 1;
-    }
-    const order = Number(row.order);
-    if (!setIds.has(row.workoutSetId) || !Number.isInteger(order) || order < 1) {
-      throw new Error("The backup contains invalid or orphaned Myo-rep data.");
-    }
-    const repError = validateStoredRepResult(row, false);
-    if (repError) {
-      throw new Error(`The backup contains an invalid Myo-rep mini-set (${String(row.id ?? index + 1)}): ${repError}.`);
-    }
-    const mainSet = setById.get(row.workoutSetId);
-    const workoutExercise = mainSet && workoutExerciseById.get(mainSet.workoutExerciseId);
-    const finalSet = workoutExercise && importedSets
-      .filter(set => set.workoutExerciseId === workoutExercise.id && set.isWarmup !== true)
-      .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
-    if (!mainSet || finalSet?.id !== mainSet.id || workoutExercise?.actualLastSetIntensityTechnique !== "myo_reps") {
-      throw new Error("Myo-rep data must belong to the final set of a Myo-reps exercise.");
-    }
-    const grouped = myoByMainSet.get(row.workoutSetId) ?? [];
-    grouped.push(row);
-    myoByMainSet.set(row.workoutSetId, grouped);
-  }
-  for (const rows of myoByMainSet.values()) {
-    const orders = rows.map(row => Number(row.order)).sort((a, b) => a - b);
-    if (orders.some((order, index) => order !== index + 1)) {
-      throw new Error("Myo-rep mini-set order must be unique and contiguous.");
-    }
-  }
-  if (parsed.data.workoutSetMyoSets !== undefined) {
-    for (const workoutExercise of importedWorkoutExercises) {
-      if (workoutExercise.actualLastSetIntensityTechnique !== "myo_reps") continue;
-      const finalSet = importedSets.filter(set => set.workoutExerciseId === workoutExercise.id && set.isWarmup !== true)
-        .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
-      if (finalSet?.failedOnRep !== undefined && !myoByMainSet.get(finalSet.id)?.length) {
-        throw new Error("A recorded Myo-reps technique must include at least one mini-set.");
-      }
-    }
-  }
-  if (importedWorkouts.filter((workout) => workout.status === "active").length > 1) {
-    throw new Error("This backup contains more than one active workout and cannot be imported safely.");
-  }
-  const importedActiveProgramStates = (parsed.data.activeProgramStates ?? []).map(row => {
-    const copy = { ...(row as Record<string, unknown>) };
-    if (copy.cycleNumber === undefined) copy.cycleNumber = 1;
-    if (!Number.isInteger(copy.cycleNumber) || Number(copy.cycleNumber) < 1) {
-      throw new Error("The backup contains an invalid active Program cycle.");
-    }
-    return copy;
-  });
-  if (importedActiveProgramStates.length > 1) throw new Error("This backup contains more than one active Program and cannot be imported safely.");
-  if (importedActiveProgramStates.length) {
-    const state = importedActiveProgramStates[0] as Record<string, unknown>;
-    const programs = parsed.data.programs ?? [], weeks = parsed.data.programWeeks ?? [], slots = parsed.data.programWorkouts ?? [];
-    const program = programs.find(row => (row as Record<string, unknown>).id === state.programId) as Record<string, unknown> | undefined;
-    const week = weeks.find(row => (row as Record<string, unknown>).id === state.currentProgramWeekId) as Record<string, unknown> | undefined;
-    const slot = slots.find(row => (row as Record<string, unknown>).id === state.currentProgramWorkoutId) as Record<string, unknown> | undefined;
-    if (!program || !week || !slot || week.programId !== state.programId || slot.programWeekId !== state.currentProgramWeekId) throw new Error("The active Program progress in this backup has invalid references.");
-  }
+}
 
-  const confirmed = confirm("Importing this backup will replace all current local workout data. Continue?");
+const importTables = [
+  db.gyms, db.exercises, db.exerciseGymProfiles, db.workouts, db.workoutExercises,
+  db.workoutSets, db.workoutSetMyoSets, db.workoutTemplates, db.workoutTemplateExercises,
+  db.workoutTemplateExerciseSubstitutions, db.workoutExerciseSubstitutionOptions,
+  db.programs, db.programWeeks, db.programWorkouts, db.programWorkoutExerciseOverrides,
+  db.activeProgramStates
+];
 
-  if (!confirmed) return;
-
+export async function replaceDatabaseWithBackup(backup: NormalizedWorkoutLogBackup) {
+  const validation = validateBackup(backup);
+  if (!validation.valid) throw new Error(formatBackupValidationErrors(validation.errors));
+  const rows = (collection: keyof typeof backup.data) => backup.data[collection] as never[];
   await db.transaction(
     "rw",
-    [
-      db.gyms,
-      db.exercises,
-      db.exerciseGymProfiles,
-      db.workouts,
-      db.workoutExercises,
-      db.workoutSets,
-      db.workoutTemplates,
-      db.workoutTemplateExercises,
-      db.workoutTemplateExerciseSubstitutions,
-      db.workoutExerciseSubstitutionOptions,
-      db.programs,
-      db.programWeeks,
-      db.programWorkouts,
-      db.programWorkoutExerciseOverrides,
-      db.activeProgramStates,
-      db.workoutSetMyoSets
-    ],
+    importTables,
     async () => {
       await db.programWorkoutExerciseOverrides.clear();
       await db.activeProgramStates.clear();
@@ -293,40 +138,54 @@ export async function importJsonBackup(file: File) {
       await db.exercises.clear();
       await db.gyms.clear();
 
-      await db.gyms.bulkAdd((parsed.data.gyms ?? []) as never[]);
-      await db.exercises.bulkAdd(parsed.data.exercises as never[]);
-      await db.exerciseGymProfiles.bulkAdd(
-        (parsed.data.exerciseGymProfiles ?? []) as never[]
-      );
-
-      await db.workoutTemplates.bulkAdd(
-        (parsed.data.workoutTemplates ?? []) as never[]
-      );
-
-      await db.workoutTemplateExercises.bulkAdd(
-        importedTemplateExercises as never[]
-      );
-      await db.workoutTemplateExerciseSubstitutions.bulkAdd(templateSubstitutionRows as never[]);
-
-      await db.programs.bulkAdd((parsed.data.programs ?? []) as never[]);
-      await db.programWeeks.bulkAdd((parsed.data.programWeeks ?? []) as never[]);
-      await db.programWorkouts.bulkAdd((parsed.data.programWorkouts ?? []) as never[]);
-      await db.programWorkoutExerciseOverrides.bulkAdd(importedOverrides as never[]);
-      await db.activeProgramStates.bulkAdd(importedActiveProgramStates as never[]);
-
-      await db.workouts.bulkAdd(importedWorkouts as never[]);
-
-      await db.workoutExercises.bulkAdd(
-        importedWorkoutExercises as never[]
-      );
-      await db.workoutExerciseSubstitutionOptions.bulkAdd(workoutOptionRows as never[]);
-
-      await db.workoutSets.bulkAdd(
-        importedSets as never[]
-      );
-      await db.workoutSetMyoSets.bulkAdd(myoRows as never[]);
+      await db.gyms.bulkAdd(rows("gyms"));
+      await db.exercises.bulkAdd(rows("exercises"));
+      await db.exerciseGymProfiles.bulkAdd(rows("exerciseGymProfiles"));
+      await db.workoutTemplates.bulkAdd(rows("workoutTemplates"));
+      await db.workoutTemplateExercises.bulkAdd(rows("workoutTemplateExercises"));
+      await db.workoutTemplateExerciseSubstitutions.bulkAdd(rows("workoutTemplateExerciseSubstitutions"));
+      await db.programs.bulkAdd(rows("programs"));
+      await db.programWeeks.bulkAdd(rows("programWeeks"));
+      await db.programWorkouts.bulkAdd(rows("programWorkouts"));
+      await db.programWorkoutExerciseOverrides.bulkAdd(rows("programWorkoutExerciseOverrides"));
+      await db.activeProgramStates.bulkAdd(rows("activeProgramStates"));
+      await db.workouts.bulkAdd(rows("workouts"));
+      await db.workoutExercises.bulkAdd(rows("workoutExercises"));
+      await db.workoutExerciseSubstitutionOptions.bulkAdd(rows("workoutExerciseSubstitutionOptions"));
+      await db.workoutSets.bulkAdd(rows("workoutSets"));
+      await db.workoutSetMyoSets.bulkAdd(rows("workoutSetMyoSets"));
     }
   );
+}
+
+function importConfirmation(counts: BackupImportCounts) {
+  return [
+    "Import this backup?",
+    "",
+    `${counts.workouts} workouts`,
+    `${counts.exerciseSessions} exercise sessions`,
+    `${counts.sets} sets`,
+    `${counts.programs} Programs`,
+    `${counts.templates} Templates`,
+    `${counts.gyms} Gyms`,
+    "",
+    "A safety backup of your current data will be downloaded first. Import replaces all current local data."
+  ].join("\n");
+}
+
+export async function importJsonBackup(file: File): Promise<{ imported: boolean; safetyBackupDownloadInitiated: boolean }> {
+  const candidate = await prepareJsonBackup(file);
+  if (!confirm(importConfirmation(candidate.counts))) return { imported: false, safetyBackupDownloadInitiated: false };
+
+  const safetyBackup = await createBackup();
+  const safetyValidation = validateBackup(normalizeBackup(safetyBackup));
+  if (!safetyValidation.valid) {
+    throw new Error(`Import was not applied because the current database could not produce a restorable safety backup.\n${formatBackupValidationErrors(safetyValidation.errors)}`);
+  }
+  const timestamp = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+  triggerBackupDownload(safetyBackup, `workout-log-pre-import-backup-${timestamp}.json`);
+  await replaceDatabaseWithBackup(candidate.backup);
+  return { imported: true, safetyBackupDownloadInitiated: true };
 }
 
 function csvEscape(value: unknown) {
