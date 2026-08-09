@@ -13,7 +13,9 @@ import type {
   ProgramWorkout,
   ProgramWorkoutExerciseOverride,
   ActiveProgramState,
-  WorkoutSetMyoSet
+  WorkoutSetMyoSet,
+  WorkoutTemplateExerciseSubstitution,
+  WorkoutExerciseSubstitutionOption
 } from "./types";
 
 class WorkoutLogDatabase extends Dexie {
@@ -31,6 +33,8 @@ class WorkoutLogDatabase extends Dexie {
   programWorkoutExerciseOverrides!: Table<ProgramWorkoutExerciseOverride, number>;
   activeProgramStates!: Table<ActiveProgramState, number>;
   workoutSetMyoSets!: Table<WorkoutSetMyoSet, number>;
+  workoutTemplateExerciseSubstitutions!: Table<WorkoutTemplateExerciseSubstitution, number>;
+  workoutExerciseSubstitutionOptions!: Table<WorkoutExerciseSubstitutionOption, number>;
 
   constructor() {
     super("WorkoutLogDatabase");
@@ -202,6 +206,25 @@ class WorkoutLogDatabase extends Dexie {
           set.reps = set.failedOnRep - 1;
         }
       });
+    });
+
+    this.version(12).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+      workouts: "++id, date, status, gymId, programId, programWorkoutId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, prescribedExerciseId, sourceTemplateExerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+      workoutSetMyoSets: "++id, workoutSetId, order, &[workoutSetId+order]",
+      workoutTemplates: "++id, name, createdAt, updatedAt",
+      workoutTemplateExercises: "++id, templateId, exerciseId, order",
+      workoutTemplateExerciseSubstitutions: "++id, templateExerciseId, substituteExerciseId, order, &[templateExerciseId+substituteExerciseId]",
+      workoutExerciseSubstitutionOptions: "++id, workoutExerciseId, exerciseId, order, &[workoutExerciseId+exerciseId]",
+      programs: "++id, name, createdAt, updatedAt",
+      programWeeks: "++id, programId, order, [programId+order]",
+      programWorkouts: "++id, programWeekId, templateId, order, [programWeekId+order]",
+      programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]",
+      activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
     });
   }
 }

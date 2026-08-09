@@ -172,6 +172,7 @@ function getSetPerformedTime(set: WorkoutSet) {
 
 function snapshotTemplateExercise(
   templateExercise: WorkoutTemplateExercise,
+  prescribedExerciseName: string,
   workoutId: number,
   order: number,
   now: string
@@ -180,6 +181,9 @@ function snapshotTemplateExercise(
     workoutId,
     exerciseId: templateExercise.exerciseId,
     order,
+    sourceTemplateExerciseId: templateExercise.id,
+    prescribedExerciseId: templateExercise.exerciseId,
+    prescribedExerciseNameSnapshot: prescribedExerciseName,
     plannedSetCount: templateExercise.plannedSetCount,
     targetMinReps: templateExercise.targetMinReps,
     targetMaxReps: templateExercise.targetMaxReps,
@@ -202,11 +206,8 @@ export async function startWorkoutFromTemplate(
 ): Promise<ApplyWorkoutTemplateResult> {
   return await db.transaction(
     "rw",
-    db.workoutTemplates,
-    db.workoutTemplateExercises,
-    db.workouts,
-    db.workoutExercises,
-    db.exercises,
+    [db.workoutTemplates, db.workoutTemplateExercises, db.workouts, db.workoutExercises,
+      db.exercises, db.workoutTemplateExerciseSubstitutions, db.workoutExerciseSubstitutionOptions],
     async () => {
       const template = await db.workoutTemplates.get(templateId);
 
@@ -265,16 +266,26 @@ export async function startWorkoutFromTemplate(
         Math.max(0, ...existingRows.map((row) => row.order)) + 1;
 
       if (exercisesToAdd.length) {
-        await db.workoutExercises.bulkAdd(
-          exercisesToAdd.map((row, index) =>
-            snapshotTemplateExercise(
-              row,
-              workout!.id!,
-              nextOrder + index,
-              now
-            )
-          )
-        );
+        const sourceIds = exercisesToAdd.flatMap((row) => row.id ?? []);
+        const substitutions = sourceIds.length
+          ? await db.workoutTemplateExerciseSubstitutions.where("templateExerciseId").anyOf(sourceIds).toArray()
+          : [];
+        const exerciseIds = [...new Set(exercisesToAdd.map((row) => row.exerciseId)
+          .concat(substitutions.map((row) => row.substituteExerciseId)))];
+        const exerciseRows = await db.exercises.bulkGet(exerciseIds);
+        const nameById = new Map(exerciseIds.map((id, index) => [id, exerciseRows[index]?.name ?? `Exercise ${id}`]));
+        for (const [index, row] of exercisesToAdd.entries()) {
+          const workoutExerciseId = await db.workoutExercises.add(snapshotTemplateExercise(
+            row, nameById.get(row.exerciseId)!, workout!.id!, nextOrder + index, now));
+          const options = substitutions.filter((option) => option.templateExerciseId === row.id).sort((a, b) => a.order - b.order);
+          if (options.length) await db.workoutExerciseSubstitutionOptions.bulkAdd(options.map((option, optionIndex) => ({
+            workoutExerciseId,
+            exerciseId: option.substituteExerciseId,
+            order: optionIndex + 1,
+            exerciseNameSnapshot: nameById.get(option.substituteExerciseId)!,
+            createdAt: now
+          })));
+        }
       }
 
       await db.workouts.update(workout.id, { updatedAt: now });
@@ -299,6 +310,49 @@ export async function startWorkoutFromTemplate(
       };
     }
   );
+}
+
+export type WorkoutExerciseSubstitutionChoice = {
+  exerciseId: number;
+  name: string;
+  isPrescribed: boolean;
+};
+
+export async function getWorkoutExerciseSubstitutionChoices(workoutExerciseId: number): Promise<WorkoutExerciseSubstitutionChoice[]> {
+  const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+  if (!workoutExercise?.prescribedExerciseId || !workoutExercise.prescribedExerciseNameSnapshot) return [];
+  const options = await db.workoutExerciseSubstitutionOptions.where("workoutExerciseId").equals(workoutExerciseId).sortBy("order");
+  if (!options.length) return [];
+  return [{
+    exerciseId: workoutExercise.prescribedExerciseId,
+    name: workoutExercise.prescribedExerciseNameSnapshot,
+    isPrescribed: true
+  }, ...options.map((option) => ({
+    exerciseId: option.exerciseId,
+    name: option.exerciseNameSnapshot,
+    isPrescribed: false
+  }))];
+}
+
+export async function swapWorkoutExercise(workoutExerciseId: number, exerciseId: number): Promise<void> {
+  await db.transaction("rw", db.workoutExercises, db.workoutExerciseSubstitutionOptions, db.workoutSets, db.workouts, db.exercises, async () => {
+    const workoutExercise = await db.workoutExercises.get(workoutExerciseId);
+    if (!workoutExercise?.prescribedExerciseId) throw new Error("This exercise does not come from a template substitution slot.");
+    const options = await db.workoutExerciseSubstitutionOptions.where("workoutExerciseId").equals(workoutExerciseId).toArray();
+    const allowed = exerciseId === workoutExercise.prescribedExerciseId || options.some((option) => option.exerciseId === exerciseId);
+    if (!allowed) throw new Error("That exercise is not an allowed substitute for this workout slot.");
+    if (!await db.exercises.get(exerciseId)) throw new Error("That substitute is no longer available in the exercise library.");
+    if (await db.workoutSets.where("workoutExerciseId").equals(workoutExerciseId).count()) {
+      throw new Error("This exercise already has recorded sets. Delete the sets before swapping exercises.");
+    }
+    if (workoutExercise.exerciseId === exerciseId) return;
+    const duplicate = await db.workoutExercises.where("workoutId").equals(workoutExercise.workoutId)
+      .and((row) => row.id !== workoutExerciseId && row.exerciseId === exerciseId).first();
+    if (duplicate) throw new Error("That exercise is already in this workout.");
+    const now = nowString();
+    await db.workoutExercises.update(workoutExerciseId, { exerciseId, updatedAt: now });
+    await db.workouts.update(workoutExercise.workoutId, { updatedAt: now });
+  });
 }
 
 export async function getExerciseComparisons(
@@ -884,6 +938,7 @@ export async function removeExerciseFromWorkout(
     db.workoutExercises,
     db.workoutSets,
     db.workoutSetMyoSets,
+    db.workoutExerciseSubstitutionOptions,
     async () => {
       const setIds = await db.workoutSets.where("workoutExerciseId").equals(workoutExerciseId).primaryKeys();
       if (setIds.length) await db.workoutSetMyoSets.where("workoutSetId").anyOf(setIds).delete();
@@ -893,6 +948,7 @@ export async function removeExerciseFromWorkout(
         .delete();
 
       await db.workoutExercises.delete(workoutExerciseId);
+      await db.workoutExerciseSubstitutionOptions.where("workoutExerciseId").equals(workoutExerciseId).delete();
     }
   );
 

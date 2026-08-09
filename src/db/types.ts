@@ -55,6 +55,10 @@ export type WorkoutExercise = {
   exerciseId: number;
   order: number;
 
+  sourceTemplateExerciseId?: number;
+  prescribedExerciseId?: number;
+  prescribedExerciseNameSnapshot?: string;
+
   notes?: string;
   startedAt?: string;
 
@@ -72,6 +76,15 @@ export type WorkoutExercise = {
 
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type WorkoutExerciseSubstitutionOption = {
+  id?: number;
+  workoutExerciseId: number;
+  exerciseId: number;
+  order: number;
+  exerciseNameSnapshot: string;
+  createdAt: string;
 };
 
 export type WorkoutSet = {
@@ -127,6 +140,15 @@ export type WorkoutTemplateExercise = {
   prescriptionNotes?: string;
   plannedLastSetIntensityTechnique?: LastSetIntensityTechnique;
 
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkoutTemplateExerciseSubstitution = {
+  id?: number;
+  templateExerciseId: number;
+  substituteExerciseId: number;
+  order: number;
   createdAt: string;
   updatedAt: string;
 };

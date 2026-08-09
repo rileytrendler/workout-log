@@ -16,6 +16,8 @@ export type WorkoutLogBackup = {
     workoutSets: unknown[];
     workoutTemplates: unknown[];
     workoutTemplateExercises: unknown[];
+    workoutTemplateExerciseSubstitutions?: unknown[];
+    workoutExerciseSubstitutionOptions?: unknown[];
     programs?: unknown[];
     programWeeks?: unknown[];
     programWorkouts?: unknown[];
@@ -40,6 +42,8 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
       workoutTemplates: await db.workoutTemplates.toArray(),
       workoutTemplateExercises:
         await db.workoutTemplateExercises.toArray(),
+      workoutTemplateExerciseSubstitutions: await db.workoutTemplateExerciseSubstitutions.toArray(),
+      workoutExerciseSubstitutionOptions: await db.workoutExerciseSubstitutionOptions.toArray(),
       programs: await db.programs.toArray(),
       programWeeks: await db.programWeeks.toArray(),
       programWorkouts: await db.programWorkouts.toArray(),
@@ -118,6 +122,56 @@ export async function importJsonBackup(file: File) {
     }
     return copy;
   });
+  const templateSubstitutionRows = (parsed.data.workoutTemplateExerciseSubstitutions ?? []) as Array<Record<string, unknown>>;
+  const workoutOptionRows = (parsed.data.workoutExerciseSubstitutionOptions ?? []) as Array<Record<string, unknown>>;
+  const exerciseRows = (parsed.data.exercises ?? []) as Array<Record<string, unknown>>;
+  const templateExerciseRows = importedTemplateExercises as Array<Record<string, unknown>>;
+  const exerciseIds = new Set(exerciseRows.map(row => row.id));
+  const templateExerciseById = new Map(templateExerciseRows.map(row => [row.id, row]));
+  const workoutExerciseIds = new Set(importedWorkoutExercises.map(row => row.id));
+  const importedWorkoutExerciseById = new Map(importedWorkoutExercises.map(row => [row.id, row]));
+  for (const row of importedWorkoutExercises) {
+    if (row.prescribedExerciseId !== undefined &&
+      (typeof row.prescribedExerciseNameSnapshot !== "string" || !row.prescribedExerciseNameSnapshot.trim())) {
+      throw new Error("The backup contains workout provenance without a prescribed exercise name snapshot.");
+    }
+  }
+  const templateOptionKeys = new Set<string>();
+  const templateOrders = new Map<unknown, number[]>();
+  for (const row of templateSubstitutionRows) {
+    const source = templateExerciseById.get(row.templateExerciseId);
+    const order = Number(row.order);
+    if (!source || !exerciseIds.has(row.substituteExerciseId) || source.exerciseId === row.substituteExerciseId || !Number.isInteger(order) || order < 1) {
+      throw new Error("The backup contains an invalid template exercise substitution.");
+    }
+    const key = `${String(row.templateExerciseId)}:${String(row.substituteExerciseId)}`;
+    if (templateOptionKeys.has(key)) throw new Error("The backup contains duplicate template exercise substitutions.");
+    templateOptionKeys.add(key);
+    templateOrders.set(row.templateExerciseId, [...(templateOrders.get(row.templateExerciseId) ?? []), order]);
+  }
+  for (const orders of templateOrders.values()) {
+    orders.sort((a, b) => a - b);
+    if (orders.some((order, index) => order !== index + 1)) throw new Error("Template substitution order must be contiguous.");
+  }
+  const workoutOptionKeys = new Set<string>();
+  const workoutOptionOrders = new Map<unknown, number[]>();
+  for (const row of workoutOptionRows) {
+    const order = Number(row.order);
+    const workoutExercise = importedWorkoutExerciseById.get(row.workoutExerciseId);
+    if (!workoutExerciseIds.has(row.workoutExerciseId) || !exerciseIds.has(row.exerciseId) ||
+      workoutExercise?.prescribedExerciseId === row.exerciseId ||
+      typeof row.exerciseNameSnapshot !== "string" || !row.exerciseNameSnapshot.trim() || !Number.isInteger(order) || order < 1) {
+      throw new Error("The backup contains an invalid workout substitution snapshot.");
+    }
+    const key = `${String(row.workoutExerciseId)}:${String(row.exerciseId)}`;
+    if (workoutOptionKeys.has(key)) throw new Error("The backup contains duplicate workout substitution choices.");
+    workoutOptionKeys.add(key);
+    workoutOptionOrders.set(row.workoutExerciseId, [...(workoutOptionOrders.get(row.workoutExerciseId) ?? []), order]);
+  }
+  for (const orders of workoutOptionOrders.values()) {
+    orders.sort((a, b) => a - b);
+    if (orders.some((order, index) => order !== index + 1)) throw new Error("Workout substitution choice order must be contiguous.");
+  }
   const setIds = new Set(importedSets.map(row => row.id));
   const setById = new Map(importedSets.map(row => [row.id, row]));
   const workoutExerciseById = new Map(importedWorkoutExercises.map(row => [row.id, row]));
@@ -193,6 +247,8 @@ export async function importJsonBackup(file: File) {
       db.workoutSets,
       db.workoutTemplates,
       db.workoutTemplateExercises,
+      db.workoutTemplateExerciseSubstitutions,
+      db.workoutExerciseSubstitutionOptions,
       db.programs,
       db.programWeeks,
       db.programWorkouts,
@@ -207,6 +263,8 @@ export async function importJsonBackup(file: File) {
       await db.programWeeks.clear();
       await db.programs.clear();
       await db.workoutTemplateExercises.clear();
+      await db.workoutTemplateExerciseSubstitutions.clear();
+      await db.workoutExerciseSubstitutionOptions.clear();
       await db.workoutSetMyoSets.clear();
       await db.workoutTemplates.clear();
       await db.workoutSets.clear();
@@ -229,6 +287,7 @@ export async function importJsonBackup(file: File) {
       await db.workoutTemplateExercises.bulkAdd(
         importedTemplateExercises as never[]
       );
+      await db.workoutTemplateExerciseSubstitutions.bulkAdd(templateSubstitutionRows as never[]);
 
       await db.programs.bulkAdd((parsed.data.programs ?? []) as never[]);
       await db.programWeeks.bulkAdd((parsed.data.programWeeks ?? []) as never[]);
@@ -241,6 +300,7 @@ export async function importJsonBackup(file: File) {
       await db.workoutExercises.bulkAdd(
         importedWorkoutExercises as never[]
       );
+      await db.workoutExerciseSubstitutionOptions.bulkAdd(workoutOptionRows as never[]);
 
       await db.workoutSets.bulkAdd(
         importedSets as never[]
@@ -305,6 +365,8 @@ export async function downloadSetsCsv() {
       "programWeek",
       "programWorkout",
       "exerciseName",
+      "prescribedExercise",
+      "wasSubstituted",
       "exerciseNotes",
       "plannedLastSetIntensityTechnique",
       "actualLastSetIntensityTechnique",
@@ -367,6 +429,8 @@ export async function downloadSetsCsv() {
       workout?.programWeekLabelSnapshot,
       workout?.programWorkoutNameSnapshot,
       exercise?.name,
+      workoutExercise?.prescribedExerciseNameSnapshot ?? exercise?.name,
+      workoutExercise?.prescribedExerciseId !== undefined && workoutExercise.exerciseId !== workoutExercise.prescribedExerciseId,
       workoutExercise?.notes,
       workoutExercise?.plannedLastSetIntensityTechnique,
       set.isWarmup !== true && set.setNumber === finalWorkingSetNumber ? workoutExercise?.actualLastSetIntensityTechnique : undefined,

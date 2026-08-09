@@ -80,6 +80,10 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
             <p className="muted">{[session.gymName, source(session.workout), session.workout.status].filter(Boolean).join(" · ")}</p></div>
             {session.workout.id && <button className="secondary-button tiny-button" onClick={() => onOpenWorkout(session.workout.id!)}>Open Workout</button>}</div>
           {session.workoutExercise.notes && <p className="note-block">{session.workoutExercise.notes}</p>}
+          {session.workoutExercise.prescribedExerciseId !== undefined &&
+            session.workoutExercise.exerciseId !== session.workoutExercise.prescribedExerciseId &&
+            session.workoutExercise.prescribedExerciseNameSnapshot &&
+            <p className="substitution-note">Substituted for {session.workoutExercise.prescribedExerciseNameSnapshot}</p>}
           <ol className="exercise-history-set-list">{session.sets.map((set) => <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}</span>
             {set.performedAt && <span className="muted">{new Date(set.performedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
             {set.notes && <p className="set-note">{set.notes}</p>}

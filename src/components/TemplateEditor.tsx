@@ -5,19 +5,23 @@ import { ExerciseDetailsPanel } from "./ExerciseDetailsPanel";
 import { getOrCreateExercise } from "../data/exerciseRepository";
 import {
   addExerciseToTemplate,
+  addTemplateExerciseSubstitution,
   createWorkoutTemplate,
   deleteWorkoutTemplate,
   getTemplateWithExercises,
   getWorkoutTemplates,
   moveTemplateExercise,
+  moveTemplateExerciseSubstitution,
   removeExerciseFromTemplate,
+  removeTemplateExerciseSubstitution,
   updateTemplateExercise,
   updateWorkoutTemplate
 } from "../data/templateRepository";
 import type {
   Exercise,
   LastSetIntensityTechnique,
-  WorkoutTemplateExercise
+  WorkoutTemplateExercise,
+  WorkoutTemplateExerciseSubstitution
 } from "../db/types";
 import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
 
@@ -56,14 +60,20 @@ function TemplateExerciseEditor({
   exerciseId,
   exerciseName,
   isFirst,
-  isLast
+  isLast,
+  exercises,
+  substitutions
 }: {
   templateExercise: WorkoutTemplateExercise;
   exerciseId: number;
   exerciseName: string;
   isFirst: boolean;
   isLast: boolean;
+  exercises: Exercise[];
+  substitutions: WorkoutTemplateExerciseSubstitution[];
 }) {
+  const [substitutionsOpen, setSubstitutionsOpen] = useState(substitutions.length > 0);
+  const [substituteName, setSubstituteName] = useState("");
   const [fields, setFields] =
     useState<TemplateExerciseFields>({
       plannedSetCount: "",
@@ -256,6 +266,24 @@ function TemplateExerciseEditor({
     );
   }
 
+  async function addSubstitute(event: React.FormEvent) {
+    event.preventDefault();
+    if (!templateExercise.id || !substituteName.trim()) return;
+    try {
+      const substituteExerciseId = await getOrCreateExercise(substituteName);
+      await addTemplateExerciseSubstitution(templateExercise.id, substituteExerciseId);
+      setSubstituteName("");
+      setSubstitutionsOpen(true);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Substitute could not be added.");
+    }
+  }
+
+  const substitutionExerciseIds = new Set(substitutions.map((row) => row.substituteExerciseId));
+  const availableExercises = exercises.filter((exercise) =>
+    exercise.id !== exerciseId && (exercise.id === undefined || !substitutionExerciseIds.has(exercise.id)));
+  const exerciseNameFor = (id: number) => exercises.find((exercise) => exercise.id === id)?.name ?? "Missing exercise";
+
   return (
     <div className="template-exercise-card">
       <div className="template-exercise-header">
@@ -311,6 +339,32 @@ function TemplateExerciseEditor({
       <ExerciseDetailsPanel
         exerciseId={exerciseId}
       />
+
+      <details className="substitution-disclosure" open={substitutionsOpen}
+        onToggle={(event) => setSubstitutionsOpen(event.currentTarget.open)}>
+        <summary>
+          <span>Substitutions</span>
+          <span className="muted">{substitutions.length ? substitutions.map((row) => exerciseNameFor(row.substituteExerciseId)).join(", ") : "Optional"}</span>
+        </summary>
+        <p className="muted">Inherits this exercise’s sets, reps, RPE, rest, and intensity-technique prescription.</p>
+        {substitutions.length > 0 && <div className="substitution-list">
+          {substitutions.map((substitution, index) => <div className="substitution-row" key={substitution.id}>
+            <span>{index + 1}. {exerciseNameFor(substitution.substituteExerciseId)}</span>
+            <div className="button-row">
+              <button type="button" className="secondary-button tiny-button" disabled={index === 0}
+                onClick={() => substitution.id && moveTemplateExerciseSubstitution(substitution.id, "up")}>↑</button>
+              <button type="button" className="secondary-button tiny-button" disabled={index === substitutions.length - 1}
+                onClick={() => substitution.id && moveTemplateExerciseSubstitution(substitution.id, "down")}>↓</button>
+              <button type="button" className="secondary-button tiny-button danger"
+                onClick={() => substitution.id && removeTemplateExerciseSubstitution(substitution.id)}>Remove</button>
+            </div>
+          </div>)}
+        </div>}
+        <form className="inline-form substitution-add-form" onSubmit={addSubstitute}>
+          <ExerciseAutocomplete exercises={availableExercises} value={substituteName} onChange={setSubstituteName} />
+          <button type="submit">Add Substitute</button>
+        </form>
+      </details>
 
       <label className="field-label compact-technique-field">
         Last-set intensity technique
@@ -742,6 +796,10 @@ export function TemplateEditor({
                               .exercises.length -
                               1
                           }
+                          exercises={exercises}
+                          substitutions={selectedTemplate.substitutions
+                            .filter((row) => row.templateExerciseId === templateExercise.id)
+                            .sort((a, b) => a.order - b.order)}
                         />
                       )
                     )

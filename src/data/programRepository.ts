@@ -179,7 +179,7 @@ export async function moveActiveProgramProgress(direction: "previous" | "next", 
 }
 
 export async function startPlannedProgramWorkout(date: string, gymId?: number): Promise<Workout> {
-  return db.transaction("rw", [db.activeProgramStates, db.programs, db.programWeeks, db.programWorkouts, db.programWorkoutExerciseOverrides, db.workoutTemplates, db.workoutTemplateExercises, db.workouts, db.workoutExercises], async () => {
+  return db.transaction("rw", [db.activeProgramStates, db.programs, db.programWeeks, db.programWorkouts, db.programWorkoutExerciseOverrides, db.workoutTemplates, db.workoutTemplateExercises, db.workoutTemplateExerciseSubstitutions, db.workoutExerciseSubstitutionOptions, db.exercises, db.workouts, db.workoutExercises], async () => {
     if (await db.workouts.where("status").equals("active").first()) throw new Error("A workout is already active. Finish it before starting the planned workout.");
     const planned = await getPlannedProgramWorkout();
     if (!planned) throw new Error("The planned Program workout is no longer valid. Review the active Program.");
@@ -195,16 +195,41 @@ export async function startPlannedProgramWorkout(date: string, gymId?: number): 
     const notes = [planned.template.notes?.trim(), planned.workout.notes?.trim()].filter(Boolean).join("\n\n") || undefined;
     const workoutId = await db.workouts.add({ date, status: "active", gymId, title: workoutName, notes, startTime: now, createdAt: now, updatedAt: now, programId: planned.program.id, programWeekId: planned.week.id, programWorkoutId: planned.workout.id, programNameSnapshot: planned.program.name, programWeekLabelSnapshot: weekLabel, programWorkoutNameSnapshot: workoutName });
     const fields = ["plannedSetCount","targetMinReps","targetMaxReps","targetRpeMin","targetRpeMax","targetRestSeconds","warmupInstructions","prescriptionNotes"] as const;
-    const rows: WorkoutExercise[] = templateExercises.map((templateExercise, index) => {
+    const templateExerciseIds = templateExercises.flatMap(row => row.id ?? []);
+    const substitutions = templateExerciseIds.length
+      ? await db.workoutTemplateExerciseSubstitutions.where("templateExerciseId").anyOf(templateExerciseIds).toArray()
+      : [];
+    const allExerciseIds = [...new Set(templateExercises.map(row => row.exerciseId).concat(substitutions.map(row => row.substituteExerciseId)))];
+    const exerciseRows = await db.exercises.bulkGet(allExerciseIds);
+    const nameById = new Map(allExerciseIds.map((id, index) => [id, exerciseRows[index]?.name ?? `Exercise ${id}`]));
+    for (const [index, templateExercise] of templateExercises.entries()) {
       const override = overrideByExercise.get(templateExercise.exerciseId);
       const resolved: Partial<WorkoutExercise> = {};
       for (const field of fields) resolved[field] = override?.[field] !== undefined ? override[field] as never : templateExercise[field] as never;
       resolved.plannedLastSetIntensityTechnique = override?.plannedLastSetIntensityTechnique !== undefined
         ? override.plannedLastSetIntensityTechnique ?? undefined
         : templateExercise.plannedLastSetIntensityTechnique;
-      return { workoutId, exerciseId: templateExercise.exerciseId, order: index + 1, ...resolved, startedAt: now, createdAt: now, updatedAt: now };
-    });
-    await db.workoutExercises.bulkAdd(rows);
+      const workoutExerciseId = await db.workoutExercises.add({
+        workoutId,
+        exerciseId: templateExercise.exerciseId,
+        order: index + 1,
+        sourceTemplateExerciseId: templateExercise.id,
+        prescribedExerciseId: templateExercise.exerciseId,
+        prescribedExerciseNameSnapshot: nameById.get(templateExercise.exerciseId),
+        ...resolved,
+        startedAt: now,
+        createdAt: now,
+        updatedAt: now
+      });
+      const options = substitutions.filter(row => row.templateExerciseId === templateExercise.id).sort((a, b) => a.order - b.order);
+      if (options.length) await db.workoutExerciseSubstitutionOptions.bulkAdd(options.map((option, optionIndex) => ({
+        workoutExerciseId,
+        exerciseId: option.substituteExerciseId,
+        order: optionIndex + 1,
+        exerciseNameSnapshot: nameById.get(option.substituteExerciseId)!,
+        createdAt: now
+      })));
+    }
     const created = await db.workouts.get(workoutId); if (!created) throw new Error("Workout could not be created."); return created;
   });
 }

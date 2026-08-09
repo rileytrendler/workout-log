@@ -1,7 +1,8 @@
 import { db } from "../db/db";
 import type {
   WorkoutTemplate,
-  WorkoutTemplateExercise
+  WorkoutTemplateExercise,
+  WorkoutTemplateExerciseSubstitution
 } from "../db/types";
 
 function nowString() {
@@ -11,6 +12,7 @@ function nowString() {
 export type TemplateWithExercises = {
   template: WorkoutTemplate;
   exercises: WorkoutTemplateExercise[];
+  substitutions: WorkoutTemplateExerciseSubstitution[];
 };
 
 export async function createWorkoutTemplate(
@@ -59,10 +61,15 @@ export async function getTemplateWithExercises(
     .where("templateId")
     .equals(templateId)
     .sortBy("order");
+  const exerciseIds = exercises.flatMap((row) => row.id ?? []);
+  const substitutions = exerciseIds.length
+    ? await db.workoutTemplateExerciseSubstitutions.where("templateExerciseId").anyOf(exerciseIds).sortBy("order")
+    : [];
 
   return {
     template,
-    exercises
+    exercises,
+    substitutions
   };
 }
 
@@ -89,7 +96,12 @@ export async function deleteWorkoutTemplate(
     "rw",
     db.workoutTemplates,
     db.workoutTemplateExercises,
+    db.workoutTemplateExerciseSubstitutions,
     async () => {
+      const templateExerciseIds = (await db.workoutTemplateExercises.where("templateId").equals(templateId).primaryKeys()) as number[];
+      if (templateExerciseIds.length) {
+        await db.workoutTemplateExerciseSubstitutions.where("templateExerciseId").anyOf(templateExerciseIds).delete();
+      }
       await db.workoutTemplateExercises
         .where("templateId")
         .equals(templateId)
@@ -201,21 +213,23 @@ export async function removeExerciseFromTemplate(
 
   if (!removedExercise) return;
 
-  await db.workoutTemplateExercises.delete(
-    templateExerciseId
-  );
-
-  const remainingExercises =
-    await db.workoutTemplateExercises
-      .where("templateId")
-      .equals(removedExercise.templateId)
-      .sortBy("order");
-
   await db.transaction(
     "rw",
     db.workoutTemplateExercises,
+    db.workoutTemplateExerciseSubstitutions,
     db.workoutTemplates,
+    db.programWorkouts,
+    db.programWorkoutExerciseOverrides,
     async () => {
+      await db.workoutTemplateExerciseSubstitutions.where("templateExerciseId").equals(templateExerciseId).delete();
+      const programWorkoutIds = (await db.programWorkouts.where("templateId").equals(removedExercise.templateId).primaryKeys()) as number[];
+      if (programWorkoutIds.length) {
+        await db.programWorkoutExerciseOverrides.where("programWorkoutId").anyOf(programWorkoutIds)
+          .and((row) => row.exerciseId === removedExercise.exerciseId).delete();
+      }
+      await db.workoutTemplateExercises.delete(templateExerciseId);
+      const remainingExercises = await db.workoutTemplateExercises
+        .where("templateId").equals(removedExercise.templateId).sortBy("order");
       for (
         let index = 0;
         index < remainingExercises.length;
@@ -242,6 +256,69 @@ export async function removeExerciseFromTemplate(
       );
     }
   );
+}
+
+export async function addTemplateExerciseSubstitution(
+  templateExerciseId: number,
+  substituteExerciseId: number
+): Promise<number> {
+  const source = await db.workoutTemplateExercises.get(templateExerciseId);
+  if (!source) throw new Error("Template exercise could not be found.");
+  if (source.exerciseId === substituteExerciseId) {
+    throw new Error("The prescribed exercise cannot substitute for itself.");
+  }
+  if (!await db.exercises.get(substituteExerciseId)) throw new Error("Substitute exercise could not be found.");
+  const existing = await db.workoutTemplateExerciseSubstitutions
+    .where("templateExerciseId").equals(templateExerciseId).sortBy("order");
+  if (existing.some((row) => row.substituteExerciseId === substituteExerciseId)) {
+    throw new Error("That substitute is already allowed for this exercise.");
+  }
+  const now = nowString();
+  return db.transaction("rw", db.workoutTemplateExerciseSubstitutions, db.workoutTemplates, async () => {
+    const id = await db.workoutTemplateExerciseSubstitutions.add({
+      templateExerciseId,
+      substituteExerciseId,
+      order: existing.length + 1,
+      createdAt: now,
+      updatedAt: now
+    });
+    await db.workoutTemplates.update(source.templateId, { updatedAt: now });
+    return id;
+  });
+}
+
+export async function removeTemplateExerciseSubstitution(id: number): Promise<void> {
+  const removed = await db.workoutTemplateExerciseSubstitutions.get(id);
+  if (!removed) return;
+  const source = await db.workoutTemplateExercises.get(removed.templateExerciseId);
+  await db.transaction("rw", db.workoutTemplateExerciseSubstitutions, db.workoutTemplates, async () => {
+    await db.workoutTemplateExerciseSubstitutions.delete(id);
+    const remaining = await db.workoutTemplateExerciseSubstitutions
+      .where("templateExerciseId").equals(removed.templateExerciseId).sortBy("order");
+    const now = nowString();
+    for (const [index, row] of remaining.entries()) {
+      if (row.id) await db.workoutTemplateExerciseSubstitutions.update(row.id, { order: index + 1, updatedAt: now });
+    }
+    if (source) await db.workoutTemplates.update(source.templateId, { updatedAt: now });
+  });
+}
+
+export async function moveTemplateExerciseSubstitution(id: number, direction: "up" | "down"): Promise<void> {
+  const current = await db.workoutTemplateExerciseSubstitutions.get(id);
+  if (!current) return;
+  const rows = await db.workoutTemplateExerciseSubstitutions
+    .where("templateExerciseId").equals(current.templateExerciseId).sortBy("order");
+  const index = rows.findIndex((row) => row.id === id);
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index < 0 || targetIndex < 0 || targetIndex >= rows.length) return;
+  const target = rows[targetIndex];
+  const source = await db.workoutTemplateExercises.get(current.templateExerciseId);
+  const now = nowString();
+  await db.transaction("rw", db.workoutTemplateExerciseSubstitutions, db.workoutTemplates, async () => {
+    await db.workoutTemplateExerciseSubstitutions.update(id, { order: target.order, updatedAt: now });
+    await db.workoutTemplateExerciseSubstitutions.update(target.id!, { order: current.order, updatedAt: now });
+    if (source) await db.workoutTemplates.update(source.templateId, { updatedAt: now });
+  });
 }
 
 export async function moveTemplateExercise(

@@ -34,11 +34,54 @@ import {
   updateSetPerformedTime,
   updateWorkoutExerciseNotes,
   updateWorkoutGym,
-  updateWorkoutText
-  , deleteWorkoutSet
+  updateWorkoutText,
+  deleteWorkoutSet,
+  getWorkoutExerciseSubstitutionChoices,
+  swapWorkoutExercise
 } from "./data/workoutRepository";
 import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
 import { getActiveProgramState, getPlannedProgramWorkout, skipPlannedWorkout, startPlannedProgramWorkout } from "./data/programRepository";
+
+function SubstitutionNote({ workoutExercise }: { workoutExercise: WorkoutExercise }) {
+  return workoutExercise.prescribedExerciseId !== undefined &&
+    workoutExercise.exerciseId !== workoutExercise.prescribedExerciseId &&
+    workoutExercise.prescribedExerciseNameSnapshot
+    ? <p className="substitution-note">Substituted for {workoutExercise.prescribedExerciseNameSnapshot}</p>
+    : null;
+}
+
+function SwapExerciseControl({ workoutExercise, hasSets }: { workoutExercise: WorkoutExercise; hasSets: boolean }) {
+  const [open, setOpen] = useState(false);
+  const choices = useLiveQuery(
+    () => workoutExercise.id ? getWorkoutExerciseSubstitutionChoices(workoutExercise.id) : Promise.resolve([]),
+    [workoutExercise.id]
+  ) ?? [];
+  if (!choices.length || !workoutExercise.id) return null;
+
+  async function choose(exerciseId: number) {
+    if (!workoutExercise.id || exerciseId === workoutExercise.exerciseId) { setOpen(false); return; }
+    const choice = choices.find((row) => row.exerciseId === exerciseId);
+    if (!choice || !confirm(`Swap this slot to ${choice.name}? Its existing prescription will stay unchanged.`)) return;
+    try {
+      await swapWorkoutExercise(workoutExercise.id, exerciseId);
+      setOpen(false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Exercise could not be swapped.");
+    }
+  }
+
+  if (hasSets) return <span className="muted swap-blocked-note" title="Delete all recorded sets before swapping.">Swap unavailable after sets are recorded</span>;
+  return <div className="swap-exercise-control">
+    <button type="button" className="secondary-button tiny-button" onClick={() => setOpen((value) => !value)}>Swap Exercise</button>
+    {open && <div className="swap-choice-list" role="group" aria-label="Allowed exercise choices">
+      {choices.map((choice) => <button type="button" key={choice.exerciseId}
+        className={choice.exerciseId === workoutExercise.exerciseId ? "swap-choice-current" : "secondary-button"}
+        onClick={() => void choose(choice.exerciseId)}>
+        {choice.name}{choice.isPrescribed ? " (original)" : ""}
+      </button>)}
+    </div>}
+  </div>;
+}
 
 function todayString() {
   const now = new Date();
@@ -853,11 +896,14 @@ function App() {
                               workoutExercise.startedAt
                             )}
                           </p>
+                          <SubstitutionNote workoutExercise={workoutExercise} />
                         </div>
 
                         {workoutExerciseId !== undefined && (
                           <button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: workoutExercise.exerciseId, gymId: workout?.gymId, from: "active" })}>View History</button>
                         )}
+
+                        <SwapExerciseControl workoutExercise={workoutExercise} hasSets={sets.length > 0} />
 
                         {workoutExerciseId !== undefined && (
                           <button
@@ -1055,7 +1101,7 @@ function App() {
 
                           return (
                             <div className={fullWorkoutView ? "mini-card full-history-card" : "mini-card"} key={historyWorkoutExercise.id}>
-                              <div className="exercise-history-card-heading"><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
+                              <div className="exercise-history-card-heading"><div><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><SubstitutionNote workoutExercise={historyWorkoutExercise} /></div><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
 
                               {fullWorkoutView && (
                                 <>

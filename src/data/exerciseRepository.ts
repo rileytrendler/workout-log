@@ -32,11 +32,22 @@ export async function getOrCreateExercise(name: string): Promise<number> {
 
 export async function getUnusedExercises(): Promise<Exercise[]> {
   const exercises = await db.exercises.toArray();
-  const workoutExercises = await db.workoutExercises.toArray();
-
-  const usedExerciseIds = new Set(
-    workoutExercises.map((workoutExercise) => workoutExercise.exerciseId)
-  );
+  const [workoutExercises, templateExercises, substitutions, workoutOptions, overrides] = await Promise.all([
+    db.workoutExercises.toArray(),
+    db.workoutTemplateExercises.toArray(),
+    db.workoutTemplateExerciseSubstitutions.toArray(),
+    db.workoutExerciseSubstitutionOptions.toArray(),
+    db.programWorkoutExerciseOverrides.toArray()
+  ]);
+  const usedExerciseIds = new Set<number>();
+  for (const row of workoutExercises) {
+    usedExerciseIds.add(row.exerciseId);
+    if (row.prescribedExerciseId !== undefined) usedExerciseIds.add(row.prescribedExerciseId);
+  }
+  templateExercises.forEach((row) => usedExerciseIds.add(row.exerciseId));
+  substitutions.forEach((row) => usedExerciseIds.add(row.substituteExerciseId));
+  workoutOptions.forEach((row) => usedExerciseIds.add(row.exerciseId));
+  overrides.forEach((row) => usedExerciseIds.add(row.exerciseId));
 
   return exercises.filter(
     (exercise) =>
@@ -47,6 +58,24 @@ export async function getUnusedExercises(): Promise<Exercise[]> {
 
 export async function deleteExercises(exerciseIds: number[]): Promise<void> {
   if (!exerciseIds.length) return;
+  const requested = new Set(exerciseIds);
+  const [workoutExercises, templateExercises, substitutions, workoutOptions, overrides] = await Promise.all([
+    db.workoutExercises.toArray(), db.workoutTemplateExercises.toArray(),
+    db.workoutTemplateExerciseSubstitutions.toArray(), db.workoutExerciseSubstitutionOptions.toArray(),
+    db.programWorkoutExerciseOverrides.toArray()
+  ]);
+  const counts = {
+    workouts: workoutExercises.filter((row) => requested.has(row.exerciseId) || (row.prescribedExerciseId !== undefined && requested.has(row.prescribedExerciseId))).length,
+    templates: templateExercises.filter((row) => requested.has(row.exerciseId)).length,
+    templateSubstitutions: substitutions.filter((row) => requested.has(row.substituteExerciseId)).length,
+    workoutOptions: workoutOptions.filter((row) => requested.has(row.exerciseId)).length,
+    programOverrides: overrides.filter((row) => requested.has(row.exerciseId)).length
+  };
+  const references = Object.entries(counts).filter(([, count]) => count > 0)
+    .map(([kind, count]) => `${count} ${kind.replace(/([A-Z])/g, " $1").toLowerCase()}`);
+  if (references.length) {
+    throw new Error(`Exercise deletion is blocked because the selection is referenced by ${references.join(", ")}.`);
+  }
 
   await db.transaction("rw", db.exercises, db.exerciseGymProfiles, async () => {
     await db.exerciseGymProfiles.where("exerciseId").anyOf(exerciseIds).delete();

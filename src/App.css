@@ -142,6 +142,7 @@ textarea { min-height: 58px; resize: vertical; }
 .gym-row > span { min-width: 0; font-weight: 650; }
 .button-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .exercise-header, .history-detail-header, .template-editor-heading, .template-exercise-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.exercise-header { flex-wrap: wrap; }
 .exercise-header h3, .history-detail-header h3, .template-editor-heading h3 { margin: 0; }
 .exercise-header .muted { margin-top: 2px; }
 .prescription-summary { margin: 8px 0; padding: 7px 9px; border-left: 3px solid var(--accent); border-radius: 0 7px 7px 0; color: var(--muted-text); background-color: var(--accent-soft); font-size: .8rem; }
@@ -245,6 +246,18 @@ textarea { min-height: 58px; resize: vertical; }
 .template-order-number { display: inline-block; min-width: 24px; color: var(--muted-text); font-weight: 700; }
 .template-target-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 8px; }
 .template-target-grid .field-label { margin: 0; }
+.substitution-disclosure { margin: 8px 0; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.substitution-disclosure > summary { display: flex; justify-content: space-between; gap: 8px; cursor: pointer; color: var(--accent-strong); font-size: .84rem; font-weight: 750; }
+.substitution-disclosure > summary .muted { max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.substitution-list { display: flex; flex-direction: column; gap: 5px; margin: 7px 0; }
+.substitution-row { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding-top: 5px; border-top: 1px solid var(--border); font-size: .82rem; }
+.substitution-add-form { margin-top: 7px; }
+.substitution-note { margin: 2px 0; color: var(--accent-strong); font-size: .78rem; font-weight: 650; }
+.swap-exercise-control { position: relative; }
+.swap-choice-list { position: absolute; z-index: 12; top: calc(100% + 4px); right: 0; display: flex; flex-direction: column; width: min(240px, 78vw); padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 6px 18px rgb(23 33 27 / 16%); }
+.swap-choice-list button { width: 100%; min-height: 36px; border-radius: 5px; text-align: left; }
+.swap-choice-current { color: var(--accent-strong); background: var(--accent-soft); }
+.swap-blocked-note { max-width: 150px; align-self: center; }
 .program-week > summary, .override-disclosure > summary, .program-override-card > summary { cursor: pointer; }
 .program-week > summary { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
 .program-week > summary::marker { color: var(--accent); }
@@ -280,6 +293,7 @@ textarea { min-height: 58px; resize: vertical; }
   .history-detail-header .button-row { justify-content: flex-start; }
   .template-exercise-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .template-exercise-header .button-row { grid-column: 1 / -1; }
+  .substitution-row { align-items: flex-start; flex-direction: column; }
   .template-target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .template-start-list { grid-template-columns: 1fr; }
   .set-row { flex-direction: column; }
