@@ -2,10 +2,15 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   deleteWorkoutSet,
+  addMyoSet,
+  deleteMyoSet,
+  getMyoSets,
+  updateMyoSet,
   getExerciseComparisons,
   getWorkoutExerciseContext,
   saveSetPerformance,
   updateActualLastSetIntensityTechnique,
+  updateLongLengthPartialReps,
   updateSetNote,
   type PriorExercisePerformance,
   type PriorSetReference
@@ -13,9 +18,13 @@ import {
 import type {
   ExerciseMeasurementType,
   LastSetIntensityTechnique,
-  WorkoutSet
+  WorkoutExercise,
+  WorkoutSet,
+  WorkoutSetMyoSet
 } from "../db/types";
 import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES } from "../utils/intensityTechniques";
+import { formatSetPerformance } from "../utils/setFormatting";
+import { encodeRepResult, findFinalWorkingSet } from "../utils/failureSemantics";
 
 type ExerciseSetRowsProps = {
   workoutExerciseId: number;
@@ -28,6 +37,7 @@ type SetDraft = {
   weight: string;
   reps: string;
   actualRpe: string;
+  failed: boolean;
 };
 
 function getSetPerformedTime(set: WorkoutSet) {
@@ -96,25 +106,6 @@ function weightPlaceholder(
   }
 
   return "Weight";
-}
-
-function displayWeight(
-  set: WorkoutSet,
-  measurementType: ExerciseMeasurementType
-) {
-  if (measurementType === "reps_only") {
-    return `${set.reps ?? "?"} reps`;
-  }
-
-  if (measurementType === "bodyweight_added_weight") {
-    const addedWeight = set.weight ?? 0;
-
-    return addedWeight === 0
-      ? `Bodyweight × ${set.reps ?? "?"}`
-      : `Bodyweight + ${addedWeight} × ${set.reps ?? "?"}`;
-  }
-
-  return `${set.weight ?? "?"}×${set.reps ?? "?"}`;
 }
 
 export function ExerciseSetRows({
@@ -213,23 +204,25 @@ export function ExerciseSetRows({
     return (
       drafts[setNumber] ?? {
         weight: storedWeight,
-        reps: currentSet?.reps?.toString() ?? "",
+        reps: (currentSet?.failedOnRep ?? currentSet?.reps)?.toString() ?? "",
         actualRpe:
-          currentSet?.actualRpe?.toString() ?? ""
+          currentSet?.actualRpe?.toString() ?? "",
+        failed: currentSet?.failedOnRep !== undefined
       }
     );
   }
 
   async function savePerformanceIfReady(
-    setNumber: number
+    setNumber: number,
+    overrideDraft?: SetDraft
   ) {
-    const draft = getDraft(setNumber);
+    const draft = overrideDraft ?? getDraft(setNumber);
 
-    const reps = Number(draft.reps);
+    const enteredReps = Number(draft.reps);
 
     if (
       !draft.reps ||
-      Number.isNaN(reps)
+      Number.isNaN(enteredReps) || !Number.isInteger(enteredReps) || enteredReps < 1
     ) {
       return;
     }
@@ -258,7 +251,7 @@ export function ExerciseSetRows({
       weight = 0;
     }
 
-    const actualRpe =
+    const actualRpe = draft.failed ? 10 :
       draft.actualRpe.trim() === ""
         ? undefined
         : Number(draft.actualRpe);
@@ -275,15 +268,34 @@ export function ExerciseSetRows({
       return;
     }
 
-    const result = await saveSetPerformance(
-      workoutExerciseId,
-      setNumber,
-      {
-        weight,
-        reps,
-        actualRpe
+    const existingSet = getCurrentSet(setNumber);
+    const previousFinalSet = [...currentSets]
+      .filter((set) => set.isWarmup !== true)
+      .sort((a, b) => b.setNumber - a.setNumber)[0];
+    if (!existingSet && previousFinalSet && setNumber > previousFinalSet.setNumber &&
+      context?.workoutExercise.actualLastSetIntensityTechnique) {
+      const technique = LAST_SET_INTENSITY_LABELS[context.workoutExercise.actualLastSetIntensityTechnique];
+      if (!confirm(`Adding Set ${setNumber} will make it the final set. Existing ${technique} details on Set ${previousFinalSet.setNumber} will be removed.`)) {
+        return;
       }
-    );
+    }
+
+    const repResult = encodeRepResult(enteredReps, draft.failed);
+    let result: Awaited<ReturnType<typeof saveSetPerformance>>;
+    try {
+      result = await saveSetPerformance(
+        workoutExerciseId,
+        setNumber,
+        {
+          weight,
+          ...repResult,
+          actualRpe
+        }
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Set could not be saved.");
+      return;
+    }
 
     if (result.created) {
       onWorkingSetCreated?.(result.setId, setNumber);
@@ -293,7 +305,7 @@ export function ExerciseSetRows({
   function updateDraft(
     setNumber: number,
     field: keyof SetDraft,
-    value: string
+    value: string | boolean
   ) {
     const currentDraft = getDraft(setNumber);
 
@@ -365,7 +377,7 @@ export function ExerciseSetRows({
     { length: rowCount },
     (_, index) => index + 1
   );
-  const finalWorkingSet = [...currentSets].filter(set => set.isWarmup !== true).sort((a, b) => b.setNumber - a.setNumber)[0];
+  const finalWorkingSet = findFinalWorkingSet(currentSets);
 
   return (
     <div className="set-entry-rows">
@@ -425,9 +437,24 @@ export function ExerciseSetRows({
                 placeholder="Reps"
               />
 
+              <button type="button" aria-pressed={draft.failed} aria-label={`Set ${setNumber} failed rep`}
+                className={`failure-toggle ${draft.failed ? "active" : ""}`}
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (draft.failed && currentSet?.id === finalWorkingSet?.id && context?.workoutExercise.actualLastSetIntensityTechnique &&
+                    !confirm(`Removing F will clear ${LAST_SET_INTENSITY_LABELS[context.workoutExercise.actualLastSetIntensityTechnique]} details from this final set. Continue?`)) return;
+                  const nextDraft = { ...draft, failed: !draft.failed,
+                    actualRpe: !draft.failed ? "10" : draft.actualRpe };
+                  setDrafts(current => ({ ...current, [setNumber]: nextDraft }));
+                  void savePerformanceIfReady(setNumber, nextDraft);
+                }}>F</button>
+
               <input
                 inputMode="decimal"
                 value={draft.actualRpe}
+                disabled={draft.failed}
+                aria-label={draft.failed ? "RPE locked at 10 for failed set" : "RPE"}
+                title={draft.failed ? "Failed sets are locked at RPE 10" : undefined}
                 onChange={(event) =>
                   updateDraft(
                     setNumber,
@@ -447,8 +474,7 @@ export function ExerciseSetRows({
                     {referenceRows.map(({ labels, reference }) => (
                       <div key={reference.set.id ?? `${reference.workout.id}-${setNumber}`}>
                         <strong>{labels.join(" / ")}:</strong>{" "}
-                        {displayWeight(reference.set, measurementType)}
-                        {reference.set.actualRpe !== undefined && ` @ ${reference.set.actualRpe}`}
+                        {formatSetPerformance(reference.set, measurementType)}
                       </div>
                     ))}
 
@@ -593,17 +619,113 @@ export function ExerciseSetRows({
         + Add Set
       </button>
 
-      {finalWorkingSet && <label className="field-label actual-technique-field">
-        Actual technique · Set {finalWorkingSet.setNumber}
-        <select
-          value={context?.workoutExercise.actualLastSetIntensityTechnique ?? ""}
-          disabled={finalWorkingSet.actualRpe !== 10}
-          onChange={(event) => updateActualLastSetIntensityTechnique(workoutExerciseId, (event.target.value || undefined) as LastSetIntensityTechnique | undefined)}
-        >
-          <option value="">{finalWorkingSet.actualRpe === 10 ? "Not recorded" : "N/A — requires RPE 10"}</option>
-          {LAST_SET_INTENSITY_TECHNIQUES.map(value => <option key={value} value={value}>{LAST_SET_INTENSITY_LABELS[value]}</option>)}
-        </select>
-      </label>}
+      {finalWorkingSet && context?.workoutExercise &&
+        <ActualTechniqueEditor workoutExercise={context.workoutExercise} finalWorkingSet={finalWorkingSet} />}
     </div>
   );
+}
+
+export function ActualTechniqueEditor({ workoutExercise, finalWorkingSet }: {
+  workoutExercise: WorkoutExercise & { id?: number };
+  finalWorkingSet: WorkoutSet;
+}) {
+  const workoutExerciseId = workoutExercise.id;
+  if (!workoutExerciseId) return null;
+  const canRecord = finalWorkingSet.actualRpe === 10 && finalWorkingSet.failedOnRep !== undefined;
+
+  async function changeTechnique(technique?: LastSetIntensityTechnique) {
+    const existingMyoRows = finalWorkingSet.id ? await getMyoSets(finalWorkingSet.id) : [];
+    if (workoutExercise.actualLastSetIntensityTechnique === "myo_reps" && technique !== "myo_reps" && existingMyoRows.length &&
+      !confirm("Changing away from Myo-reps will delete its mini-sets. Continue?")) return;
+    try {
+      await updateActualLastSetIntensityTechnique(
+        workoutExerciseId!,
+        technique,
+        technique === "failure_llps" ? (workoutExercise.longLengthPartialReps ?? 1) : undefined
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Actual technique could not be updated.");
+    }
+  }
+
+  return <div className="actual-technique-editor">
+    <label className="field-label actual-technique-field">
+      Actual technique · Set {finalWorkingSet.setNumber}
+      <select value={workoutExercise.actualLastSetIntensityTechnique ?? ""} disabled={!canRecord}
+        onChange={(event) => void changeTechnique((event.target.value || undefined) as LastSetIntensityTechnique | undefined)}>
+        <option value="">{canRecord ? "Not recorded" : "N/A — requires F and RPE 10"}</option>
+        {LAST_SET_INTENSITY_TECHNIQUES.map(value =>
+          <option key={value} value={value}>{LAST_SET_INTENSITY_LABELS[value]}</option>)}
+      </select>
+    </label>
+    {workoutExercise.actualLastSetIntensityTechnique === "failure_llps" &&
+      <LlpInput key={workoutExercise.longLengthPartialReps ?? "empty"}
+        workoutExerciseId={workoutExerciseId} count={workoutExercise.longLengthPartialReps} />}
+    {finalWorkingSet.id && workoutExercise.actualLastSetIntensityTechnique === "myo_reps" &&
+      <MyoSets workoutSetId={finalWorkingSet.id} />}
+  </div>;
+}
+
+function LlpInput({ workoutExerciseId, count }: { workoutExerciseId: number; count?: number }) {
+  const [value, setValue] = useState(count?.toString() ?? "");
+  async function save() {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      alert("Enter a positive whole-number LLP count.");
+      setValue(count?.toString() ?? "");
+      return;
+    }
+    try { await updateLongLengthPartialReps(workoutExerciseId, parsed); }
+    catch (error) { alert(error instanceof Error ? error.message : "LLP count could not be saved."); }
+  }
+  return <label className="field-label llp-field">Long-length partials
+    <input inputMode="numeric" min="1" type="number" value={value}
+      onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} />
+  </label>;
+}
+
+function MyoSets({ workoutSetId }: { workoutSetId: number }) {
+  const rows = useLiveQuery(() => getMyoSets(workoutSetId), [workoutSetId]) ?? [];
+  const [reps, setReps] = useState("");
+  const [failed, setFailed] = useState(false);
+  async function add() {
+    const value = Number(reps);
+    if (!Number.isInteger(value) || value < 1) {
+      alert(failed ? "A failed mini-set needs an attempted rep of at least 1." : "Enter at least one completed rep.");
+      return;
+    }
+    try {
+      const stored = encodeRepResult(value, failed);
+      await addMyoSet(workoutSetId, stored.reps, stored.failedOnRep);
+      setReps(""); setFailed(false);
+    } catch (error) { alert(error instanceof Error ? error.message : "Myo mini-set could not be added."); }
+  }
+  return <div className="myo-set-editor"><strong>Myo-rep mini-sets</strong>
+    {!rows.length && <span className="muted">Add at least one mini-set.</span>}
+    {rows.map(row => <MyoSetRow key={row.id} row={row} />)}
+    <div className="myo-set-row myo-add-row"><span className="myo-order">{rows.length + 1}</span>
+      <input inputMode="numeric" type="number" min="1" value={reps} onChange={e => setReps(e.target.value)} placeholder="Reps" />
+      <button type="button" aria-pressed={failed} className={`failure-toggle ${failed ? "active" : ""}`} onClick={() => setFailed(!failed)}>F</button>
+      <button className="secondary-button tiny-button" onClick={() => void add()}>+ Add Myo Set</button></div>
+  </div>;
+}
+
+function MyoSetRow({ row }: { row: WorkoutSetMyoSet }) {
+  const [reps, setReps] = useState(String(row.failedOnRep ?? row.reps));
+  const [failed, setFailed] = useState(row.failedOnRep !== undefined);
+  async function save(nextFailed = failed) {
+    if (!row.id) return;
+    const value = Number(reps);
+    if (!Number.isInteger(value) || value < 1) return;
+    const stored = encodeRepResult(value, nextFailed);
+    try { await updateMyoSet(row.id, stored.reps, stored.failedOnRep); }
+    catch (error) { alert(error instanceof Error ? error.message : "Myo mini-set could not be saved."); }
+  }
+  return <div className="myo-set-row"><span className="myo-order">{row.order}</span>
+    <input inputMode="numeric" type="number" min="1" value={reps}
+      onChange={(event) => setReps(event.target.value)} onBlur={() => void save()} aria-label={`Myo set ${row.order} reps`} />
+    <button type="button" aria-pressed={failed} className={`failure-toggle ${failed ? "active" : ""}`}
+      onPointerDown={(event) => event.preventDefault()} onClick={() => { const next = !failed; setFailed(next); void save(next); }}>F</button>
+    <button className="secondary-button tiny-button danger" onClick={() => row.id && void deleteMyoSet(row.id)}>Delete</button>
+  </div>;
 }

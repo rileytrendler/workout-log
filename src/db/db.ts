@@ -12,7 +12,8 @@ import type {
   ProgramWeek,
   ProgramWorkout,
   ProgramWorkoutExerciseOverride,
-  ActiveProgramState
+  ActiveProgramState,
+  WorkoutSetMyoSet
 } from "./types";
 
 class WorkoutLogDatabase extends Dexie {
@@ -29,6 +30,7 @@ class WorkoutLogDatabase extends Dexie {
   programWorkouts!: Table<ProgramWorkout, number>;
   programWorkoutExerciseOverrides!: Table<ProgramWorkoutExerciseOverride, number>;
   activeProgramStates!: Table<ActiveProgramState, number>;
+  workoutSetMyoSets!: Table<WorkoutSetMyoSet, number>;
 
   constructor() {
     super("WorkoutLogDatabase");
@@ -155,6 +157,52 @@ class WorkoutLogDatabase extends Dexie {
       activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
     });
 
+    this.version(10).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+      workouts: "++id, date, status, gymId, programId, programWorkoutId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+      workoutSetMyoSets: "++id, workoutSetId, order, &[workoutSetId+order]",
+      workoutTemplates: "++id, name, createdAt, updatedAt",
+      workoutTemplateExercises: "++id, templateId, exerciseId, order",
+      programs: "++id, name, createdAt, updatedAt",
+      programWeeks: "++id, programId, order, [programId+order]",
+      programWorkouts: "++id, programWeekId, templateId, order, [programWeekId+order]",
+      programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]",
+      activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
+    });
+
+    this.version(11).stores({
+      gyms: "++id, name, createdAt",
+      exercises: "++id, name, category, createdAt",
+      exerciseGymProfiles: "++id, exerciseId, gymId, &[exerciseId+gymId]",
+      workouts: "++id, date, status, gymId, programId, programWorkoutId, createdAt, updatedAt",
+      workoutExercises: "++id, workoutId, exerciseId, order",
+      workoutSets: "++id, workoutExerciseId, setNumber, &[workoutExerciseId+setNumber]",
+      workoutSetMyoSets: "++id, workoutSetId, order, &[workoutSetId+order]",
+      workoutTemplates: "++id, name, createdAt, updatedAt",
+      workoutTemplateExercises: "++id, templateId, exerciseId, order",
+      programs: "++id, name, createdAt, updatedAt",
+      programWeeks: "++id, programId, order, [programId+order]",
+      programWorkouts: "++id, programWeekId, templateId, order, [programWeekId+order]",
+      programWorkoutExerciseOverrides: "++id, programWorkoutId, exerciseId, &[programWorkoutId+exerciseId]",
+      activeProgramStates: "++id, &programId, currentProgramWeekId, currentProgramWorkoutId"
+    }).upgrade(async (transaction) => {
+      await transaction.table("workoutSets").toCollection().modify((set) => {
+        if (Number.isInteger(set.failedOnRep) && set.failedOnRep >= 1 &&
+          set.reps === set.failedOnRep && set.actualRpe === 10) {
+          set.reps = set.failedOnRep - 1;
+          set.isFailure = true;
+        }
+      });
+      await transaction.table("workoutSetMyoSets").toCollection().modify((set) => {
+        if (Number.isInteger(set.failedOnRep) && set.failedOnRep >= 1 && set.reps === set.failedOnRep) {
+          set.reps = set.failedOnRep - 1;
+        }
+      });
+    });
   }
 }
 

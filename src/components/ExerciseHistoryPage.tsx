@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import type { Gym, WorkoutSet } from "../db/types";
-import { getExerciseHistory, type PriorExercisePerformance } from "../data/workoutRepository";
+import type { Gym, WorkoutExercise, WorkoutSet } from "../db/types";
+import { getExerciseHistory, getMyoSets, type PriorExercisePerformance } from "../data/workoutRepository";
 import { ExerciseDetailsPanel } from "./ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./ExerciseGymProfilePanel";
-import { intensityTechniqueLabel } from "../utils/intensityTechniques";
+import { formatActualTechniqueDetails, formatSetPerformance } from "../utils/setFormatting";
+import { findFinalWorkingSet } from "../utils/failureSemantics";
 
 type Props = {
   exerciseId: number;
@@ -20,10 +21,7 @@ function measurementLabel(type?: string) {
 }
 
 function setText(set: WorkoutSet, type?: string) {
-  const rpe = set.actualRpe === undefined ? "" : ` @ ${set.actualRpe}`;
-  if (type === "reps_only") return `${set.reps} reps${rpe}`;
-  if (type === "bodyweight_added_weight") return `Bodyweight + ${set.weight} × ${set.reps}${rpe}`;
-  return `${set.weight} × ${set.reps}${rpe}`;
+  return formatSetPerformance(set, (type ?? "weight_reps") as "weight_reps" | "reps_only" | "bodyweight_added_weight");
 }
 
 function Performance({ title, performance, type }: { title: string; performance?: PriorExercisePerformance; type?: string }) {
@@ -31,6 +29,16 @@ function Performance({ title, performance, type }: { title: string; performance?
     <span>{performance.workout.date}{performance.gymName ? ` · ${performance.gymName}` : ""}</span>
     <span>{performance.sets.map((set) => `Set ${set.setNumber}: ${setText(set, type)}`).join(" · ")}</span>
   </> : <span className="muted">None found</span>}</div>;
+}
+
+function TechniqueSummary({ workoutExercise, finalSetId }: { workoutExercise: WorkoutExercise; finalSetId?: number }) {
+  const rows = useLiveQuery(
+    () => finalSetId && workoutExercise.actualLastSetIntensityTechnique === "myo_reps"
+      ? getMyoSets(finalSetId) : Promise.resolve([]),
+    [finalSetId, workoutExercise.actualLastSetIntensityTechnique]
+  ) ?? [];
+  const text = formatActualTechniqueDetails(workoutExercise, rows);
+  return text ? <p className="set-note">{text}</p> : null;
 }
 
 export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWorkoutId, onBack, onOpenWorkout }: Props) {
@@ -65,14 +73,19 @@ export function ExerciseHistoryPage({ exerciseId, gyms, initialGymId, excludedWo
     </div>
     <h3>Prior sessions</h3>
     {!result.sessions.length ? <div className="card"><p>{gymId === undefined ? "No prior working sets recorded for this exercise." : `No prior working sets recorded at ${selectedGym?.name ?? "this gym"}.`}</p></div> :
-      <div className="exercise-history-sessions">{result.sessions.map((session) => <article className="mini-card exercise-history-session" key={session.workoutExercise.id}>
-        <div className="exercise-history-session-heading"><div><strong>{session.workout.date} · {session.workout.title || "Untitled Workout"}</strong>
-          <p className="muted">{[session.gymName, source(session.workout), session.workout.status].filter(Boolean).join(" · ")}</p></div>
-          {session.workout.id && <button className="secondary-button tiny-button" onClick={() => onOpenWorkout(session.workout.id!)}>Open Workout</button>}</div>
-        {session.workoutExercise.notes && <p className="note-block">{session.workoutExercise.notes}</p>}
-        <ol className="exercise-history-set-list">{session.sets.map((set) => <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}</span>
-          {set.performedAt && <span className="muted">{new Date(set.performedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
-          {set.notes && <p className="set-note">{set.notes}</p>}{set.setNumber === Math.max(...session.sets.map(candidate => candidate.setNumber)) && session.workoutExercise.actualLastSetIntensityTechnique && <p className="set-note">Technique: {intensityTechniqueLabel(session.workoutExercise.actualLastSetIntensityTechnique)}</p>}</li>)}</ol>
-      </article>)}</div>}
+      <div className="exercise-history-sessions">{result.sessions.map((session) => {
+        const finalSet = findFinalWorkingSet(session.sets);
+        return <article className="mini-card exercise-history-session" key={session.workoutExercise.id}>
+          <div className="exercise-history-session-heading"><div><strong>{session.workout.date} · {session.workout.title || "Untitled Workout"}</strong>
+            <p className="muted">{[session.gymName, source(session.workout), session.workout.status].filter(Boolean).join(" · ")}</p></div>
+            {session.workout.id && <button className="secondary-button tiny-button" onClick={() => onOpenWorkout(session.workout.id!)}>Open Workout</button>}</div>
+          {session.workoutExercise.notes && <p className="note-block">{session.workoutExercise.notes}</p>}
+          <ol className="exercise-history-set-list">{session.sets.map((set) => <li key={set.id}><strong>Set {set.setNumber}</strong><span>{setText(set, type)}</span>
+            {set.performedAt && <span className="muted">{new Date(set.performedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
+            {set.notes && <p className="set-note">{set.notes}</p>}
+            {set.id !== undefined && set.id === finalSet?.id &&
+              <TechniqueSummary workoutExercise={session.workoutExercise} finalSetId={set.id} />}</li>)}</ol>
+        </article>;
+      })}</div>}
   </section>;
 }

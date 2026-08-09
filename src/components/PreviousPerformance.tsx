@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
 import type { WorkoutSet } from "../db/types";
+import { formatReps } from "../utils/setFormatting";
 
 type PreviousPerformanceProps = {
   workoutExerciseId: number;
@@ -10,7 +11,7 @@ type PreviousPerformanceProps = {
 
 
 function formatSet(set: WorkoutSet) {
-  return `${set.weight ?? "?"}×${set.reps ?? "?"}`;
+  return `${set.weight ?? "?"}×${formatReps(set)}`;
 }
 
 function compareNumber(current?: number, previous?: number, unit = "") {

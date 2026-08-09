@@ -68,6 +68,7 @@ export type WorkoutExercise = {
   prescriptionNotes?: string;
   plannedLastSetIntensityTechnique?: LastSetIntensityTechnique;
   actualLastSetIntensityTechnique?: LastSetIntensityTechnique;
+  longLengthPartialReps?: number;
 
   createdAt?: string;
   updatedAt?: string;
@@ -79,6 +80,8 @@ export type WorkoutSet = {
   setNumber: number;
   weight?: number;
   reps?: number;
+  /** Attempted rep that was not completed. When set, equals reps + 1. */
+  failedOnRep?: number;
   actualRpe?: number;
   rir?: number;
   isWarmup?: boolean;
@@ -87,6 +90,16 @@ export type WorkoutSet = {
   performedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type WorkoutSetMyoSet = {
+  id?: number;
+  workoutSetId: number;
+  order: number;
+  reps: number;
+  failedOnRep?: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type WorkoutTemplate = {

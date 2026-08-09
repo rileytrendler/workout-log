@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "./db/db";
-import type { Gym, LastSetIntensityTechnique, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
-import { LAST_SET_INTENSITY_LABELS, LAST_SET_INTENSITY_TECHNIQUES, intensityTechniqueLabel } from "./utils/intensityTechniques";
+import type { ExerciseMeasurementType, Gym, Workout, WorkoutExercise, WorkoutSet } from "./db/types";
+import { intensityTechniqueLabel } from "./utils/intensityTechniques";
 import "./App.css";
 import { downloadJsonBackup, downloadSetsCsv, importJsonBackup } from "./utils/backup";
-import { ExerciseSetRows } from "./components/ExerciseSetRows";
+import { formatActualTechniqueDetails, formatSetPerformance } from "./utils/setFormatting";
+import { encodeRepResult, findFinalWorkingSet } from "./utils/failureSemantics";
+import { ActualTechniqueEditor, ExerciseSetRows } from "./components/ExerciseSetRows";
 import { ExerciseAutocomplete } from "./components/ExerciseAutocomplete";
 import { ExerciseDetailsPanel } from "./components/ExerciseDetailsPanel";
 import { ExerciseGymProfilePanel } from "./components/ExerciseGymProfilePanel";
@@ -28,11 +30,12 @@ import {
   startBlankWorkout,
   startWorkoutFromTemplate,
   updateHistoricalSet,
-  updateActualLastSetIntensityTechnique,
+  getMyoSets,
   updateSetPerformedTime,
   updateWorkoutExerciseNotes,
   updateWorkoutGym,
   updateWorkoutText
+  , deleteWorkoutSet
 } from "./data/workoutRepository";
 import { createGym, deleteGym, getGymWorkoutCount, getValidLastGymId, gymName, rememberLastGym, renameGym } from "./data/gymRepository";
 import { getActiveProgramState, getPlannedProgramWorkout, skipPlannedWorkout, startPlannedProgramWorkout } from "./data/programRepository";
@@ -101,6 +104,71 @@ function programSource(workout?: Workout) {
   return [workout?.programNameSnapshot, workout?.programWeekLabelSnapshot, workout?.programWorkoutNameSnapshot].filter(Boolean).join(" · ");
 }
 
+function HistoricalSetEditor({ set, measurementType, advancedTechnique, onClose }: {
+  set: WorkoutSet;
+  measurementType: ExerciseMeasurementType;
+  advancedTechnique?: WorkoutExercise["actualLastSetIntensityTechnique"];
+  onClose: () => void;
+}) {
+  const [weight, setWeight] = useState(set.weight?.toString() ?? "");
+  const [reps, setReps] = useState(String(set.failedOnRep ?? set.reps ?? ""));
+  const [failed, setFailed] = useState(set.failedOnRep !== undefined);
+  const [rpe, setRpe] = useState(set.actualRpe?.toString() ?? "");
+  const [notes, setNotes] = useState(set.notes ?? "");
+
+  async function save() {
+    if (!set.id) return;
+    if (set.failedOnRep !== undefined && !failed && advancedTechnique &&
+      !confirm(`Removing F will clear ${intensityTechniqueLabel(advancedTechnique)} details from this final set. Continue?`)) return;
+    const enteredReps = Number(reps);
+    if (!Number.isInteger(enteredReps) || enteredReps < 1) {
+      alert(failed ? "A failed set needs an attempted rep of at least 1." : "Enter at least one completed rep.");
+      return;
+    }
+    const parsedWeight = measurementType === "reps_only" ? 0 : weight.trim() === "" && measurementType === "bodyweight_added_weight" ? 0 : Number(weight);
+    if (!Number.isFinite(parsedWeight)) { alert("Enter a valid weight."); return; }
+    const actualRpe = failed ? 10 : rpe.trim() === "" ? undefined : Number(rpe);
+    if (actualRpe !== undefined && (!Number.isFinite(actualRpe) || actualRpe < 0 || actualRpe > 10)) {
+      alert("RPE must be between 0 and 10."); return;
+    }
+    try {
+      const stored = encodeRepResult(enteredReps, failed);
+      await updateHistoricalSet(set.id, {
+        weight: parsedWeight,
+        ...stored,
+        actualRpe,
+        notes
+      });
+      onClose();
+    } catch (error) { alert(error instanceof Error ? error.message : "Set could not be updated."); }
+  }
+
+  return <div className="historical-set-editor">
+    {measurementType !== "reps_only" && <input inputMode="decimal" type="number" value={weight}
+      onChange={(event) => setWeight(event.target.value)} placeholder={measurementType === "bodyweight_added_weight" ? "Added wt" : "Weight"} />}
+    <input inputMode="numeric" type="number" min="1" value={reps}
+      onChange={(event) => setReps(event.target.value)} placeholder="Reps" />
+    <button type="button" className={`failure-toggle ${failed ? "active" : ""}`} aria-pressed={failed}
+      onClick={() => { const next = !failed; setFailed(next); if (next) setRpe("10"); }}>F</button>
+    <input inputMode="decimal" type="number" min="0" max="10" value={failed ? "10" : rpe}
+      disabled={failed} aria-label={failed ? "RPE locked at 10 for failed set" : "RPE"}
+      onChange={(event) => setRpe(event.target.value)} placeholder="RPE" />
+    <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Set notes" />
+    <div className="button-row"><button onClick={() => void save()}>Save</button>
+      <button className="secondary-button" onClick={onClose}>Cancel</button></div>
+  </div>;
+}
+
+function ActualTechniqueSummary({ workoutExercise, finalSet }: { workoutExercise: WorkoutExercise; finalSet?: WorkoutSet }) {
+  const myoRows = useLiveQuery(
+    () => finalSet?.id && workoutExercise.actualLastSetIntensityTechnique === "myo_reps"
+      ? getMyoSets(finalSet.id) : Promise.resolve([]),
+    [finalSet?.id, workoutExercise.actualLastSetIntensityTechnique]
+  ) ?? [];
+  const text = formatActualTechniqueDetails(workoutExercise, myoRows);
+  return text ? <p className="set-note">{text}</p> : null;
+}
+
 function App() {
   const today = todayString();
 
@@ -109,6 +177,7 @@ function App() {
   >("active");
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
+  const [editingHistoricalSetId, setEditingHistoricalSetId] = useState<number | null>(null);
   const [exerciseName, setExerciseName] = useState("");
   const [newGymName, setNewGymName] = useState("");
   const [exerciseHistory, setExerciseHistory] = useState<{ exerciseId: number; gymId?: number; from: "active" | "history" } | null>(null);
@@ -451,47 +520,6 @@ function App() {
     }
   }
 
-  async function editSet(set: WorkoutSet) {
-    if (!set.id) return;
-
-    const weightText = prompt("Correct weight:", set.weight?.toString() ?? "");
-    if (weightText === null) return;
-
-    const repsText = prompt("Correct reps:", set.reps?.toString() ?? "");
-    if (repsText === null) return;
-
-    const notesText = prompt("Correct set notes:", set.notes ?? "");
-    if (notesText === null) return;
-
-    const rpeText = prompt("Correct RPE (0–10, decimals allowed; leave blank to clear):", set.actualRpe?.toString() ?? "");
-    if (rpeText === null) return;
-
-    const weight = Number(weightText);
-    const reps = Number(repsText);
-    const trimmedRpe = rpeText.trim();
-    const actualRpe = trimmedRpe === "" ? undefined : Number(trimmedRpe);
-
-    if (!weightText || !repsText || Number.isNaN(weight) || Number.isNaN(reps)) {
-      alert("Weight and reps must be numbers.");
-      return;
-    }
-
-    if (
-      actualRpe !== undefined &&
-      (!Number.isFinite(actualRpe) || actualRpe < 0 || actualRpe > 10)
-    ) {
-      alert("RPE must be a number between 0 and 10, inclusive, or left blank.");
-      return;
-    }
-
-    await updateHistoricalSet(set.id, {
-      weight,
-      reps,
-      actualRpe,
-      notes: notesText.trim() || undefined,
-    });
-  }
-
   async function editSetPerformedTime(set: WorkoutSet) {
     if (!set.id) return;
 
@@ -546,7 +574,7 @@ function App() {
 
     const workoutExercise = await db.workoutExercises.get(set.workoutExerciseId);
 
-    await db.workoutSets.delete(set.id);
+    await deleteWorkoutSet(set.id);
 
     if (workoutExercise?.workoutId) {
       await recalculateWorkoutLastSetAt(workoutExercise.workoutId);
@@ -637,11 +665,10 @@ function App() {
     }
   }
 
-  function renderSetLine(set: WorkoutSet, showFullDetails: boolean) {
+  function renderSetLine(set: WorkoutSet, measurementType: ExerciseMeasurementType, showFullDetails: boolean) {
     return (
       <>
-        <strong>Set {set.setNumber}:</strong> {set.weight} lb × {set.reps}
-        {set.actualRpe !== undefined && <> · RPE {set.actualRpe}</>}
+        <strong>Set {set.setNumber}:</strong> {formatSetPerformance(set, measurementType)}
         {showFullDetails && <> <span className="muted">({formatTime(getSetPerformedTime(set))})</span></>}
         {showFullDetails && set.notes && <p className="set-note">{set.notes}</p>}
       </>
@@ -1023,11 +1050,12 @@ function App() {
                         {selectedWorkoutExercises.map((historyWorkoutExercise) => {
                           const historyWorkoutExerciseId = historyWorkoutExercise.id;
                           const sets = historyWorkoutExerciseId ? getSetsForWorkoutExercise(historyWorkoutExerciseId, selectedWorkoutSets) : [];
+                          const measurementType = exercises?.find((exercise) => exercise.id === historyWorkoutExercise.exerciseId)?.measurementType ?? "weight_reps";
+                          const finalSet = findFinalWorkingSet(sets);
 
                           return (
                             <div className={fullWorkoutView ? "mini-card full-history-card" : "mini-card"} key={historyWorkoutExercise.id}>
                               <div className="exercise-history-card-heading"><h4>{getExerciseName(historyWorkoutExercise.exerciseId)}</h4><button className="secondary-button tiny-button" onClick={() => setExerciseHistory({ exerciseId: historyWorkoutExercise.exerciseId, gymId: selectedWorkout.gymId, from: "history" })}>Exercise History</button></div>
-                              {historyWorkoutExercise.actualLastSetIntensityTechnique && <p className="set-note">Actual last-set technique: {intensityTechniqueLabel(historyWorkoutExercise.actualLastSetIntensityTechnique)}</p>}
 
                               {fullWorkoutView && (
                                 <>
@@ -1041,19 +1069,26 @@ function App() {
                                   {sets.map((set) => (
                                     <li key={set.id} className={fullWorkoutView ? "set-row" : ""}>
                                       <div>
-                                        {renderSetLine(set, fullWorkoutView)}
+                                        {renderSetLine(set, measurementType, fullWorkoutView)}
                                       </div>
+                                      {set.id !== undefined && set.id === finalSet?.id &&
+                                        <ActualTechniqueSummary workoutExercise={historyWorkoutExercise} finalSet={finalSet} />}
 
                                       {fullWorkoutView && (
-                                        <div className="button-row">
-                                          <button className="secondary-button" onClick={() => editSet(set)}>Edit</button>
+                                        <><div className="button-row">
+                                          <button className="secondary-button" onClick={() => setEditingHistoricalSetId(set.id ?? null)}>Edit</button>
                                           <button className="secondary-button" onClick={() => editSetPerformedTime(set)}>Edit Time</button>
                                           <button className="secondary-button danger" onClick={() => deleteSet(set)}>Delete</button>
                                         </div>
+                                        {set.id === editingHistoricalSetId && <HistoricalSetEditor set={set} measurementType={measurementType}
+                                          advancedTechnique={set.id === finalSet?.id ? historyWorkoutExercise.actualLastSetIntensityTechnique : undefined}
+                                          onClose={() => setEditingHistoricalSetId(null)} />}
+                                        {set.id !== undefined && set.id === finalSet?.id &&
+                                          <ActualTechniqueEditor workoutExercise={historyWorkoutExercise} finalWorkingSet={finalSet} />}</>
                                       )}
                                     </li>
                                   ))}
-                                </ol>{fullWorkoutView && (() => { const finalSet = [...sets].filter(set => set.isWarmup !== true).sort((a,b) => b.setNumber-a.setNumber)[0]; return finalSet ? <label className="field-label actual-technique-field">Actual technique · Set {finalSet.setNumber}<select value={historyWorkoutExercise.actualLastSetIntensityTechnique ?? ""} disabled={finalSet.actualRpe !== 10} onChange={event => historyWorkoutExerciseId && updateActualLastSetIntensityTechnique(historyWorkoutExerciseId, (event.target.value || undefined) as LastSetIntensityTechnique | undefined)}><option value="">{finalSet.actualRpe === 10 ? "Not recorded" : "N/A — requires RPE 10"}</option>{LAST_SET_INTENSITY_TECHNIQUES.map(value => <option key={value} value={value}>{LAST_SET_INTENSITY_LABELS[value]}</option>)}</select></label> : null; })()}</>
+                                </ol></>
                               ) : (
                                 <p>No sets recorded.</p>
                               )}

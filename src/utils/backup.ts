@@ -1,5 +1,7 @@
 import { db } from "../db/db";
 import { isLastSetIntensityTechnique } from "./intensityTechniques";
+import { formatReps } from "./setFormatting";
+import { validateStoredRepResult } from "./failureSemantics";
 
 export type WorkoutLogBackup = {
   exportedAt: string;
@@ -19,6 +21,7 @@ export type WorkoutLogBackup = {
     programWorkouts?: unknown[];
     programWorkoutExerciseOverrides?: unknown[];
     activeProgramStates?: unknown[];
+    workoutSetMyoSets?: unknown[];
   };
 };
 
@@ -41,7 +44,8 @@ export async function createBackup(): Promise<WorkoutLogBackup> {
       programWeeks: await db.programWeeks.toArray(),
       programWorkouts: await db.programWorkouts.toArray(),
       programWorkoutExerciseOverrides: await db.programWorkoutExerciseOverrides.toArray(),
-      activeProgramStates: await db.activeProgramStates.toArray()
+      activeProgramStates: await db.activeProgramStates.toArray(),
+      workoutSetMyoSets: await db.workoutSetMyoSets.toArray()
     }
   };
 }
@@ -81,7 +85,21 @@ export async function importJsonBackup(file: File) {
   };
   const importedTemplateExercises = (parsed.data.workoutTemplateExercises ?? []).map(row => cleanTechnique(row, "plannedLastSetIntensityTechnique"));
   const importedOverrides = (parsed.data.programWorkoutExerciseOverrides ?? []).map(row => cleanTechnique(row, "plannedLastSetIntensityTechnique", true));
-  const importedSets = parsed.data.workoutSets ?? [];
+  const importedSets = (parsed.data.workoutSets ?? []).map((row, index) => {
+    const copy = { ...(row as Record<string, unknown>) };
+    if (typeof copy.failedOnRep === "number" && Number.isInteger(copy.failedOnRep) && copy.failedOnRep >= 1 &&
+      copy.reps === copy.failedOnRep && copy.actualRpe === 10) {
+      copy.reps = copy.failedOnRep - 1;
+      copy.isFailure = true;
+    }
+    if (copy.reps !== undefined || copy.failedOnRep !== undefined) {
+      const error = validateStoredRepResult(copy, true);
+      if (error) {
+        throw new Error(`The backup contains an invalid workout set (${String(copy.id ?? index + 1)}): ${error}.`);
+      }
+    }
+    return copy;
+  });
   const importedWorkoutExercises = (parsed.data.workoutExercises ?? []).map(row => {
     const copy = cleanTechnique(cleanTechnique(row, "plannedLastSetIntensityTechnique"), "actualLastSetIntensityTechnique");
     if (copy.actualLastSetIntensityTechnique !== undefined) {
@@ -89,10 +107,63 @@ export async function importJsonBackup(file: File) {
         .map(set => set as Record<string, unknown>)
         .filter(set => set.workoutExerciseId === copy.id && set.isWarmup !== true)
         .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
-      if (!finalSet || finalSet.actualRpe !== 10) delete copy.actualLastSetIntensityTechnique;
+      if (!finalSet || finalSet.actualRpe !== 10) {
+        delete copy.actualLastSetIntensityTechnique;
+        delete copy.longLengthPartialReps;
+      }
+    }
+    if (copy.longLengthPartialReps !== undefined &&
+      (copy.actualLastSetIntensityTechnique !== "failure_llps" || !Number.isInteger(copy.longLengthPartialReps) || Number(copy.longLengthPartialReps) < 1)) {
+      throw new Error("The backup contains invalid long-length partial data.");
     }
     return copy;
   });
+  const setIds = new Set(importedSets.map(row => row.id));
+  const setById = new Map(importedSets.map(row => [row.id, row]));
+  const workoutExerciseById = new Map(importedWorkoutExercises.map(row => [row.id, row]));
+  const myoRows = (parsed.data.workoutSetMyoSets ?? []) as Array<Record<string, unknown>>;
+  const myoByMainSet = new Map<unknown, Array<Record<string, unknown>>>();
+  for (const [index, row] of myoRows.entries()) {
+    if (typeof row.failedOnRep === "number" && Number.isInteger(row.failedOnRep) && row.failedOnRep >= 1 &&
+      row.reps === row.failedOnRep) {
+      row.reps = row.failedOnRep - 1;
+    }
+    const order = Number(row.order);
+    if (!setIds.has(row.workoutSetId) || !Number.isInteger(order) || order < 1) {
+      throw new Error("The backup contains invalid or orphaned Myo-rep data.");
+    }
+    const repError = validateStoredRepResult(row, false);
+    if (repError) {
+      throw new Error(`The backup contains an invalid Myo-rep mini-set (${String(row.id ?? index + 1)}): ${repError}.`);
+    }
+    const mainSet = setById.get(row.workoutSetId);
+    const workoutExercise = mainSet && workoutExerciseById.get(mainSet.workoutExerciseId);
+    const finalSet = workoutExercise && importedSets
+      .filter(set => set.workoutExerciseId === workoutExercise.id && set.isWarmup !== true)
+      .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
+    if (!mainSet || finalSet?.id !== mainSet.id || workoutExercise?.actualLastSetIntensityTechnique !== "myo_reps") {
+      throw new Error("Myo-rep data must belong to the final set of a Myo-reps exercise.");
+    }
+    const grouped = myoByMainSet.get(row.workoutSetId) ?? [];
+    grouped.push(row);
+    myoByMainSet.set(row.workoutSetId, grouped);
+  }
+  for (const rows of myoByMainSet.values()) {
+    const orders = rows.map(row => Number(row.order)).sort((a, b) => a - b);
+    if (orders.some((order, index) => order !== index + 1)) {
+      throw new Error("Myo-rep mini-set order must be unique and contiguous.");
+    }
+  }
+  if (parsed.data.workoutSetMyoSets !== undefined) {
+    for (const workoutExercise of importedWorkoutExercises) {
+      if (workoutExercise.actualLastSetIntensityTechnique !== "myo_reps") continue;
+      const finalSet = importedSets.filter(set => set.workoutExerciseId === workoutExercise.id && set.isWarmup !== true)
+        .sort((a, b) => Number(b.setNumber) - Number(a.setNumber))[0];
+      if (finalSet?.failedOnRep !== undefined && !myoByMainSet.get(finalSet.id)?.length) {
+        throw new Error("A recorded Myo-reps technique must include at least one mini-set.");
+      }
+    }
+  }
   if (importedWorkouts.filter((workout) => workout.status === "active").length > 1) {
     throw new Error("This backup contains more than one active workout and cannot be imported safely.");
   }
@@ -126,7 +197,8 @@ export async function importJsonBackup(file: File) {
       db.programWeeks,
       db.programWorkouts,
       db.programWorkoutExerciseOverrides,
-      db.activeProgramStates
+      db.activeProgramStates,
+      db.workoutSetMyoSets
     ],
     async () => {
       await db.programWorkoutExerciseOverrides.clear();
@@ -135,6 +207,7 @@ export async function importJsonBackup(file: File) {
       await db.programWeeks.clear();
       await db.programs.clear();
       await db.workoutTemplateExercises.clear();
+      await db.workoutSetMyoSets.clear();
       await db.workoutTemplates.clear();
       await db.workoutSets.clear();
       await db.workoutExercises.clear();
@@ -170,8 +243,9 @@ export async function importJsonBackup(file: File) {
       );
 
       await db.workoutSets.bulkAdd(
-        parsed.data.workoutSets as never[]
+        importedSets as never[]
       );
+      await db.workoutSetMyoSets.bulkAdd(myoRows as never[]);
     }
   );
 }
@@ -210,6 +284,7 @@ export async function downloadSetsCsv() {
   const workoutExercises = await db.workoutExercises.toArray();
   const workoutSets = await db.workoutSets.toArray();
   const exercises = await db.exercises.toArray();
+  const myoSets = await db.workoutSetMyoSets.toArray();
 
   const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
   const workoutExerciseById = new Map(workoutExercises.map((workoutExercise) => [workoutExercise.id, workoutExercise]));
@@ -235,11 +310,15 @@ export async function downloadSetsCsv() {
       "actualLastSetIntensityTechnique",
       "setNumber",
       "weight",
-      "reps",
+      "repsCompleted",
+      "failedOnRep",
+      "repsDisplay",
       "actualRpe",
       "rir",
       "isWarmup",
       "isFailure",
+      "longLengthPartialReps",
+      "myoMiniSets",
       "setNotes",
       "performedAt",
       "setCreatedAt",
@@ -294,10 +373,15 @@ export async function downloadSetsCsv() {
       set.setNumber,
       set.weight,
       set.reps,
+      set.failedOnRep,
+      formatReps(set),
       set.actualRpe,
       set.rir,
       set.isWarmup,
       set.isFailure,
+      set.isWarmup !== true && set.setNumber === finalWorkingSetNumber ? workoutExercise?.longLengthPartialReps : undefined,
+      set.id && set.isWarmup !== true && set.setNumber === finalWorkingSetNumber
+        ? myoSets.filter(row => row.workoutSetId === set.id).sort((a, b) => a.order - b.order).map(formatReps).join("|") : undefined,
       set.notes,
       set.performedAt ?? set.createdAt,
       set.createdAt,
