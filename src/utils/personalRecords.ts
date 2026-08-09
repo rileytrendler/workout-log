@@ -7,7 +7,7 @@ import type {
 } from "../db/types";
 import { compareBestSetPerformance, validateStoredRepResult } from "./failureSemantics";
 
-type PersistedSet = WorkoutSet & { id: number };
+export type PersistedSet = WorkoutSet & { id: number };
 
 type PersonalRecordCandidate = {
   set: PersistedSet;
@@ -33,13 +33,13 @@ function timestamp(value?: string) {
   return new Date(value).getTime();
 }
 
-function candidateTime(candidate: PersonalRecordCandidate) {
+export function getPersonalRecordEventTime(set: WorkoutSet, workout: Workout) {
   for (const value of [
-    candidate.set.performedAt,
-    candidate.set.createdAt,
-    candidate.workout.startTime,
-    candidate.workout.createdAt,
-    `${candidate.workout.date}T00:00:00`
+    set.performedAt,
+    set.createdAt,
+    workout.startTime,
+    workout.createdAt,
+    `${workout.date}T00:00:00`
   ]) {
     const time = timestamp(value);
     if (Number.isFinite(time)) return time;
@@ -48,7 +48,7 @@ function candidateTime(candidate: PersonalRecordCandidate) {
 }
 
 function compareChronology(a: PersonalRecordCandidate, b: PersonalRecordCandidate) {
-  return candidateTime(a) - candidateTime(b) ||
+  return getPersonalRecordEventTime(a.set, a.workout) - getPersonalRecordEventTime(b.set, b.workout) ||
     a.workout.date.localeCompare(b.workout.date) ||
     (a.workout.id ?? 0) - (b.workout.id ?? 0) ||
     a.workoutExercise.order - b.workoutExercise.order ||
@@ -56,7 +56,10 @@ function compareChronology(a: PersonalRecordCandidate, b: PersonalRecordCandidat
     a.set.id - b.set.id;
 }
 
-function isQualifyingSet(set: WorkoutSet, measurementType: ExerciseMeasurementType): set is PersistedSet {
+export function isQualifyingPersonalRecordSet(
+  set: WorkoutSet,
+  measurementType: ExerciseMeasurementType
+): set is PersistedSet {
   if (set.id === undefined || set.isWarmup === true || validateStoredRepResult(set, false)) return false;
   return measurementType === "reps_only" ||
     (typeof set.weight === "number" && Number.isFinite(set.weight));
@@ -84,7 +87,7 @@ export function derivePersonalRecordStatuses(source: PersonalRecordSource): Map<
     const workout = workoutExercise && workoutById.get(workoutExercise.workoutId);
     if (!workoutExercise || !workout) return [];
     const measurementType = exerciseById.get(workoutExercise.exerciseId)?.measurementType ?? "weight_reps";
-    return isQualifyingSet(set, measurementType)
+    return isQualifyingPersonalRecordSet(set, measurementType)
       ? [{ set, workout, workoutExercise, measurementType }]
       : [];
   }).sort(compareChronology);

@@ -15,6 +15,7 @@ import { TemplateEditor } from "./components/TemplateEditor";
 import { ProgramEditor } from "./components/ProgramEditor";
 import { RestTimerBar } from "./components/RestTimerBar";
 import { ExerciseHistoryPage } from "./components/ExerciseHistoryPage";
+import { ProgressPage } from "./components/ProgressPage";
 import { useRestTimer } from "./hooks/useRestTimer";
 import {
   deleteExercises,
@@ -219,7 +220,7 @@ function App() {
   const today = todayString();
 
   const [page, setPage] = useState<
-    "active" | "history" | "templates" | "programs" | "settings"
+    "active" | "history" | "progress" | "templates" | "programs" | "settings"
   >("active");
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<number | null>(null);
   const [fullWorkoutView, setFullWorkoutView] = useState(false);
@@ -751,6 +752,13 @@ function App() {
         </button>
 
         <button
+          className={page === "progress" ? "active-tab" : ""}
+          onClick={() => setPage("progress")}
+        >
+          Progress
+        </button>
+
+        <button
           className={
             page === "templates" ? "active-tab" : ""
           }
@@ -1187,6 +1195,8 @@ function App() {
           exercises={exercises ?? []}
         />
       )}
+
+      {!exerciseHistory && page === "progress" && <ProgressPage />}
 
       {!exerciseHistory && page === "programs" && (
         <ProgramEditor exercises={exercises ?? []} onViewActive={() => setPage("active")} />
